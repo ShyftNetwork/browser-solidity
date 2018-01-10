@@ -57,6 +57,7 @@ module.exports = {
     var dataHex = ''
     if (!isConstructor || funArgs.length > 0) {
       try {
+        //@note: @here: @todo:
         data = helper.encodeParams(funAbi, funArgs)
         dataHex = data.toString('hex')
       } catch (e) {

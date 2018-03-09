@@ -2,8 +2,8 @@ var remixLib = require('remix-lib')
 var EventManager = remixLib.EventManager
 var ethutil = require('ethereumjs-util')
 var executionContext = require('./execution-context')
-var format = require('./app/execution/txFormat')
-var txHelper = require('./app/execution/txHelper')
+var format = remixLib.execution.txFormat
+var txHelper = remixLib.execution.txHelper
 var async = require('async')
 var modal = require('./app/ui/modal-dialog-custom')
 
@@ -211,6 +211,26 @@ class Recorder {
         modal.alert('cannot resolve abi of ' + JSON.stringify(record, null, '\t') + '. Execution stopped at ' + index)
         cb('cannot resolve abi')
         return
+      }
+      if (tx.record.parameters) {
+        /* check if we have some params to resolve */
+        try {
+          tx.record.parameters.forEach((value, index) => {
+            var isString = true
+            if (typeof value !== 'string') {
+              isString = false
+              value = JSON.stringify(value)
+            }
+            for (var timestamp in self.data._createdContractsReverse) {
+              value = value.replace(new RegExp('created\\{' + timestamp + '\\}', 'g'), self.data._createdContractsReverse[timestamp])
+            }
+            if (!isString) value = JSON.parse(value)
+            tx.record.parameters[index] = value
+          })
+        } catch (e) {
+          modal.alert('cannot resolve input parameters ' + JSON.stringify(tx.record.parameters) + '. Execution stopped at ' + index)
+          return
+        }
       }
       var data = format.encodeData(fnABI, tx.record.parameters, tx.record.bytecode)
       if (data.error) {

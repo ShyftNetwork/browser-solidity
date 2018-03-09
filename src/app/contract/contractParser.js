@@ -1,7 +1,7 @@
 'use strict'
 
-var $ = require('jquery')
-var txHelper = require('../execution/txHelper')
+var remixLib = require('remix-lib')
+var txHelper = remixLib.execution.txHelper
 
 module.exports = (contractName, contract, compiledSource) => {
   return getDetails(contractName, contract, compiledSource)
@@ -34,6 +34,9 @@ var getDetails = function (contractName, contract, source) {
 
   detail.gasEstimates = formatGasEstimates(contract.evm.gasEstimates)
 
+  detail.devdoc = contract.devdoc
+  detail.userdoc = contract.userdoc
+
   if (contract.evm.deployedBytecode && contract.evm.deployedBytecode.object.length > 0) {
     detail['Runtime Bytecode'] = contract.evm.deployedBytecode
   }
@@ -60,7 +63,7 @@ var formatAssemblyText = function (asm, prefix, source) {
     return prefix + asm + '\n'
   }
   var text = prefix + '.code\n'
-  $.each(asm['.code'], function (i, item) {
+  asm['.code'].forEach(function (item, _i) {
     var v = item.value === undefined ? '' : item.value
     var src = ''
     if (item.begin !== undefined && item.end !== undefined) {
@@ -75,11 +78,12 @@ var formatAssemblyText = function (asm, prefix, source) {
     text += prefix + item.name + ' ' + v + '\t\t\t' + src + '\n'
   })
   text += prefix + '.data\n'
-  if (asm['.data']) {
-    $.each(asm['.data'], function (i, item) {
-      text += '  ' + prefix + '' + i + ':\n'
-      text += formatAssemblyText(item, prefix + '    ', source)
-    })
+  let asmData = (asm['.data'] || [])
+  for (let i in asmData) {
+    let item = asmData[i]
+
+    text += '  ' + prefix + '' + i + ':\n'
+    text += formatAssemblyText(item, prefix + '    ', source)
   }
   return text
 }

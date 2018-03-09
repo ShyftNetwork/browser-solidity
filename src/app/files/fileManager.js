@@ -24,8 +24,10 @@ class FileManager {
     this.opt = opt
     this.opt.filesProviders['browser'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
     this.opt.filesProviders['localhost'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
+    this.opt.filesProviders['config'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
     this.opt.filesProviders['browser'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
     this.opt.filesProviders['localhost'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
+    this.opt.filesProviders['config'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
 
     // tabs
     var $filesEl = $('#files')
@@ -47,6 +49,7 @@ class FileManager {
         self.switchFile(Object.keys(self.tabbedFiles)[0])
       } else {
         opt.editor.displayEmptyReadOnlySession()
+        self.opt.config.set('currentFile', '')
       }
       return false
     })
@@ -91,14 +94,13 @@ class FileManager {
     if (path === this.opt.config.get('currentFile')) {
       this.opt.config.set('currentFile', '')
     }
-    this.opt.editor.discard(path)
+    this.opt.editor.discardCurrentSession()
     delete this.tabbedFiles[path]
     this.refreshTabs()
   }
 
   // Display files that have already been selected
   refreshTabs (newfile) {
-    var self = this
     if (newfile) {
       this.tabbedFiles[newfile] = newfile
     }
@@ -109,39 +111,47 @@ class FileManager {
     for (var file in this.tabbedFiles) {
       $filesEl.append(yo`<li class="file"><span class="name">${file}</span><span class="remove"><i class="fa fa-close"></i></span></li>`)
     }
-    var currentFileOpen = !!this.opt.config.get('currentFile')
 
-    if (currentFileOpen) {
-      var active = $('#files .file').filter(function () { return $(this).find('.name').text() === self.opt.config.get('currentFile') })
-      active.addClass('active')
-    }
-    $('#input').toggle(currentFileOpen)
-    $('#output').toggle(currentFileOpen)
+    var active = $('#files .file').filter(function () {
+      return $(this).find('.name').text() === newfile
+    })
+    if (active.length) active.addClass('active')
+    $('#output').toggle(active)
   }
 
   switchFile (file) {
-    if (!file) {
-      var fileList = Object.keys(this.opt.filesProviders['browser'].list())
-      if (fileList.length) {
-        file = fileList[0]
-      }
-    }
-    if (!file) return
-    this.saveCurrentFile()
-    this.opt.config.set('currentFile', file)
-    this.refreshTabs(file)
-    this.fileProviderOf(file).get(file, (error, content) => {
-      if (error) {
-        console.log(error)
-      } else {
-        if (this.fileProviderOf(file).isReadOnly(file)) {
-          this.opt.editor.openReadOnly(file, content)
+    var self = this
+    if (file) return _switchFile(file)
+    else {
+      var browserProvider = self.opt.filesProviders['browser']
+      browserProvider.resolveDirectory('browser', (error, filesTree) => {
+        if (error) console.error(error)
+        var fileList = Object.keys(filesTree)
+        if (fileList.length) {
+          _switchFile(browserProvider.type + '/' + fileList[0])
         } else {
-          this.opt.editor.open(file, content)
+          self.event.trigger('currentFileChanged', [])
+          self.opt.editor.displayEmptyReadOnlySession()
         }
-        this.event.trigger('currentFileChanged', [file, this.fileProviderOf(file)])
-      }
-    })
+      })
+    }
+    function _switchFile (file) {
+      self.saveCurrentFile()
+      self.opt.config.set('currentFile', file)
+      self.refreshTabs(file)
+      self.fileProviderOf(file).get(file, (error, content) => {
+        if (error) {
+          console.log(error)
+        } else {
+          if (self.fileProviderOf(file).isReadOnly(file)) {
+            self.opt.editor.openReadOnly(file, content)
+          } else {
+            self.opt.editor.open(file, content)
+          }
+          self.event.trigger('currentFileChanged', [file, self.fileProviderOf(file)])
+        }
+      })
+    }
   }
 
   fileProviderOf (file) {

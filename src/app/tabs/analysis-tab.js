@@ -1,34 +1,7 @@
 var yo = require('yo-yo')
+var css = require('./styles/analysis-tab-styles')
 
-// -------------- styling ----------------------
-var csjs = require('csjs-inject')
-var remixLib = require('remix-lib')
-var styleGuide = remixLib.ui.styleGuide
-var styles = styleGuide()
-
-var css = csjs`
-  .analysisTabView {
-    padding: 2%;
-    padding-bottom: 3em;
-    display: flex;
-    flex-direction: column;
-  }
-  #staticanalysisView {
-    display: block;
-  }
-  .infoBox  {
-    ${styles.infoTextBox}
-    margin-bottom: 1em;
-  }
-  .textBox  {
-    ${styles.textBoxL}
-    margin-bottom: 1em;
-  }
-`
-
-module.exports = analysisTab
-
-function analysisTab (container, appAPI, events, opts) {
+function analysisTab (container) {
   var el = yo`
     <div class="${css.analysisTabView} "id="staticanalysisView">
     </div>
@@ -36,3 +9,5 @@ function analysisTab (container, appAPI, events, opts) {
   container.appendChild(el)
   return el
 }
+
+module.exports = analysisTab

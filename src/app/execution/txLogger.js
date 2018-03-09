@@ -5,14 +5,14 @@ var copyToClipboard = require('../ui/copy-to-clipboard')
 // -------------- styling ----------------------
 var csjs = require('csjs-inject')
 var remixLib = require('remix-lib')
-var styleGuide = remixLib.ui.styleGuide
-var styles = styleGuide()
+var styleGuide = remixLib.ui.themeChooser
+var styles = styleGuide.chooser()
 
 var EventManager = remixLib.EventManager
 var helper = require('../../lib/helper')
 var executionContext = require('../../execution-context')
 var modalDialog = require('../ui/modal-dialog-custom')
-var typeConversion = require('../../lib/typeConversion')
+var typeConversion = require('./typeConversion')
 
 var css = csjs`
   .log {

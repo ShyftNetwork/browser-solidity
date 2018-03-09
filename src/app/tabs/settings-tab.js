@@ -2,91 +2,98 @@
 var $ = require('jquery')
 var yo = require('yo-yo')
 var QueryParams = require('../../lib/query-params')
-
-// -------------- styling ----------------------
-var csjs = require('csjs-inject')
 var remixLib = require('remix-lib')
-var styleGuide = remixLib.ui.styleGuide
-var styles = styleGuide()
+var Storage = remixLib.Storage
+var styleGuide = remixLib.ui.themeChooser
 var helper = require('../../lib/helper')
 var modal = require('../ui/modal-dialog-custom')
 
-var css = csjs`
-  .settingsTabView {
-    padding: 2%;
-    display: flex;
-  }
-  .info {
-    ${styles.rightPanel.settingsTab.box_SolidityVersionInfo}
-    margin-bottom: 2em;
-    word-break: break-word;
-  }
-  .crow {
-    display: flex;
-    overflow: auto;
-    clear: both;
-    padding: .5em;
-    font-weight: bold;
-  }
-  .crowNoFlex {
-    overflow: auto;
-    clear: both;
-    padding: .5em;
-    font-weight: bold;
-  }
-  .select {
-    ${styles.rightPanel.settingsTab.dropdown_SelectCompiler}
-  }
-  input {
-    margin-right: 3px;
-  }
-  .pluginTextArea {
-    font-family: unset;
-  }
-  .pluginLoad {
-    vertical-align: top;
-  }
-}
-`
-module.exports = SettingsTab
+var css = require('./styles/settings-tab-styles')
 
-function SettingsTab (container, appAPI, appEvents, opts) {
+function SettingsTab (container, appAPI, appEvents) {
   if (typeof container === 'string') container = document.querySelector(container)
   if (!container) throw new Error('no container given')
 
   var queryParams = new QueryParams()
 
   var optionVM = yo`<input id="alwaysUseVM" type="checkbox">`
+  var personal = yo`<input id="personal" type="checkbox">`
+  var warnText = `Transaction sent over Web3 will use the web3.personal API - be sure the endpoint is opened before enabling it.
+  This mode allows to provide the passphrase in the Remix interface without having to unlock the account.
+  Although this is very convenient, you should completely trust the backend you are connected to (Geth, Parity, ...).
+  It is not recommended (and also most likely not relevant) to use this mode with an injected provider (Mist, Metamask, ...) or with JavaScript VM.
+  Remix never persist any passphrase.`
+  var warnPersonalMode = yo`<i title=${warnText} class="${css.icon} fa fa-exclamation-triangle" aria-hidden="true"></i>`
+
   var el = yo`
     <div class="${css.settingsTabView} "id="settingsView">
       <div class="${css.info}">
-        <div>Your current Solidity version is</div>
-        <div id="version"></div>
-      </div>
-      <div class="${css.crow}">
-        <select class="${css.select}" id="versionSelector"></select>
-      </div>
-      <div class="${css.crow}">
-        <div><input id="editorWrap" type="checkbox"></div>
-        <span class="${css.checkboxText}">Text Wrap</span>
-      </div>
-      <div class="${css.crow}">
-        <div>${optionVM}</div>
-        <span class="${css.checkboxText}">Always use VM at Load</span>
-      </div>
-      <div class="${css.crow}">
-        <div><input id="optimize" type="checkbox"></div>
-        <span class="${css.checkboxText}">Enable Optimization</span>
-      </div>
-      <hr>
-      <div class="${css.crowNoFlex}">
-        <div>Plugin (<i title="Do not use this feature yet" class="fa fa-exclamation-triangle" aria-hidden="true"></i><span> Do not use this alpha feature if you are not sure what you are doing!</span>)</div>
-         <div>
-          <textarea rows="4" cols="70" id="plugininput" type="text" class="${css.pluginTextArea}" ></textarea>
-          <input onclick=${loadPlugin} type="button" value="Load" class="${css.pluginLoad}">
-         </div>
+        <div class=${css.title}>Solidity version</div>
+        <span>Current version:</span> <span id="version"></span>
+        <div class="${css.crow}">
+          <select class="${css.select}" id="versionSelector"></select>
         </div>
+      </div>
+      <div class="${css.info}">
+      <div class=${css.title}>General settings</div>
+        <div class="${css.crow}">
+          <div>${optionVM}</div>
+          <span class="${css.checkboxText}">Always use Ethereum VM at Load</span>
+        </div>
+        <div class="${css.crow}">
+          <div><input id="editorWrap" type="checkbox"></div>
+          <span class="${css.checkboxText}">Text Wrap</span>
+        </div>
+        <div class="${css.crow}">
+          <div><input id="optimize" type="checkbox"></div>
+          <span class="${css.checkboxText}">Enable Optimization</span>
+        </div>
+        <div class="${css.crow}">
+          <div>${personal}></div>
+          <span class="${css.checkboxText}">Enable Personal Mode ${warnPersonalMode}></span>
+        </div>
+      </div>
+      <div class="${css.info}">
+        <div class=${css.title}>Remixd</div>
+        <div class="${css.crow}">
+          Remixd is a tool which allow Remix IDE to access files located in your local computer.
+          it can also be used to setup a development environment.
+        </div>
+        <div class="${css.crow}">More infos:</div>
+        <div class="${css.crow}"><a target="_blank" href="https://github.com/ethereum/remixd"> https://github.com/ethereum/remixd</a></div>
+        <div class="${css.crow}"><a target="_blank" href="http://remix.readthedocs.io/en/latest/tutorial_remixd_filesystem.html">http://remix.readthedocs.io/en/latest/tutorial_remixd_filesystem.html</a></div>
+        <div class="${css.crow}">Installation: <pre class=${css.remixdinstallation}>npm install remixd -g</pre></div>
+      </div>
+      <div class="${css.info}">
+        <div class=${css.title}>Themes</div>
+        <div class=${css.attention}>
+          <i title="Select the theme" class="${css.icon} fa fa-exclamation-triangle" aria-hidden="true"></i>
+          <span>Selecting a theme will trigger a page reload</span>
+        </div>
+        <div class="${css.crow}">
+          <input class="${css.col1}" name="theme" id="themeLight" type="checkbox">
+          <label for="themeLight">Light Theme</label>
+        </div>
+        <div class="${css.crow}">
+          <input class="${css.col1}" name="theme" id="themeDark" type="checkbox">
+          <label for="themeDark">Dark Theme</label>
+        </div>
+      </div>      
+      <div class="${css.info}">
+        <div class=${css.title}>Plugin</div>
+        <div class="${css.crowNoFlex}">
+          <div class=${css.attention}>
+            <i title="Do not use this feature yet" class="${css.icon} fa fa-exclamation-triangle" aria-hidden="true"></i>
+            <span> Do not use this alpha feature if you are not sure what you are doing!</span>
+          </div>
+          <div>
+            <textarea rows="4" cols="70" id="plugininput" type="text" class="${css.pluginTextArea}" ></textarea>
+            <input onclick=${loadPlugin} type="button" value="Load" class="${css.pluginLoad}">
+            </div>
+        </div>
+      </div>
     </div>
+
   `
 
   function loadPlugin () {
@@ -109,6 +116,11 @@ function SettingsTab (container, appAPI, appEvents, opts) {
     appAPI.config.set('settings/always-use-vm', !appAPI.config.get('settings/always-use-vm'))
   })
 
+  personal.checked = appAPI.config.get('settings/personal-mode') || false
+  personal.addEventListener('change', event => {
+    appAPI.config.set('settings/personal-mode', !appAPI.config.get('settings/personal-mode'))
+  })
+
   var optimize = el.querySelector('#optimize')
   if ((queryParams.get().optimize === 'true')) {
     optimize.setAttribute('checked', true)
@@ -122,6 +134,29 @@ function SettingsTab (container, appAPI, appEvents, opts) {
     var optimize = this.checked
     queryParams.update({ optimize: optimize })
     appAPI.setOptimize(optimize, true)
+  })
+
+  var themeStorage = new Storage('style:')
+  var currTheme = themeStorage.get('theme')
+  var themeDark = el.querySelector('#themeDark')
+  var themeLight = el.querySelector('#themeLight')
+
+  if (currTheme === 'dark') {
+    themeDark.setAttribute('checked', 'checked')
+  } else {
+    themeLight.setAttribute('checked', 'checked')
+  }
+
+  themeDark.addEventListener('change', function () {
+    console.log('change dark theme')
+    styleGuide.switchTheme('dark')
+    window.location.reload()
+  })
+
+  themeLight.addEventListener('change', function () {
+    console.log('change to light theme')
+    styleGuide.switchTheme('light')
+    window.location.reload()
   })
 
   // ----------------- version selector-------------
@@ -209,3 +244,5 @@ function loadVersion (version, queryParams, appAPI, el) {
     setVersionText('(loading)', el)
   }
 }
+
+module.exports = SettingsTab

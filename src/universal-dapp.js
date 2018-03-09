@@ -1,153 +1,23 @@
 /* global */
 'use strict'
 
-var $ = require('jquery')
+var async = require('async')
 var ethJSUtil = require('ethereumjs-util')
 var BN = ethJSUtil.BN
 var remixLib = require('remix-lib')
 var EventManager = remixLib.EventManager
 var crypto = require('crypto')
 var TxRunner = require('./app/execution/txRunner')
-var yo = require('yo-yo')
-var txFormat = require('./app/execution/txFormat')
-var txHelper = require('./app/execution/txHelper')
-var txExecution = require('./app/execution/txExecution')
-var helper = require('./lib/helper')
+var txExecution = remixLib.execution.txExecution
+var txFormat = remixLib.execution.txFormat
+var txHelper = remixLib.execution.txHelper
 var executionContext = require('./execution-context')
-var copyToClipboard = require('./app/ui/copy-to-clipboard')
+var modalCustom = require('./app/ui/modal-dialog-custom')
+var uiUtil = require('./app/ui/util')
 
-// -------------- styling ----------------------
-var csjs = require('csjs-inject')
-
-var styleGuide = remixLib.ui.styleGuide
-var styles = styleGuide()
-
-var css = csjs`
-  .instanceTitleContainer {
-    display: flex;
-    align-items: center;
-  }
-  .title {
-    ${styles.rightPanel.runTab.titlebox_RunTab}
-    display: flex;
-    justify-content: end;
-    align-items: center;
-    font-size: 11px;
-    height: 30px;
-    width: 97%;
-    overflow: hidden;
-    word-break: break-word;
-    line-height: initial;
-    overflow: visible;
-  }
-  .titleLine {
-    display: flex;
-    align-items: baseline;
-  }
-  .titleText {
-    margin-right: 1em;
-    word-break: break-word;
-    min-width: 230px;
-  }
-
-  .title .copy {
-    color: ${styles.rightPanel.runTab.icon_AltColor_Instance_CopyToClipboard};
-  }
-  .instance {
-    ${styles.rightPanel.runTab.box_Instance};
-    margin-bottom: 10px;
-    padding: 10px 15px 15px 15px;
-  }
-  .instance .title:before {
-    content: "\\25BE";
-    margin-right: 5%;
-  }
-  .instance.hidesub .title:before {
-    content: "\\25B8";
-    margin-right: 5%;
-  }
-  .instance.hidesub > * {
-      display: none;
-  }
-  .instance.hidesub .title {
-      display: flex;
-  }
-  .instance.hidesub .udappClose {
-      display: flex;
-  }
-  .buttonsContainer {
-    margin-top: 2%;
-    display: flex;
-    overflow: hidden;
-  }
-  .contractActions {
-    display: flex;
-  }
-  .instanceButton {}
-  .closeIcon {
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .udappClose {
-    display: flex;
-    justify-content: flex-end;
-  }
-  .contractProperty {
-    overflow: auto;
-    margin-bottom: 0.4em;
-  }
-  .contractProperty.hasArgs input {
-    width: 75%;
-    padding: .36em;
-  }
-  .contractProperty button {
-    ${styles.rightPanel.runTab.button_Create}
-    min-width: 100px;
-    width: 100px;
-    font-size: 10px;
-    margin:0;
-    word-break: inherit;
-  }
-  .contractProperty button:disabled {
-    cursor: not-allowed;
-    background-color: white;
-    border-color: lightgray;
-  }
-  .contractProperty.constant button {
-    ${styles.rightPanel.runTab.button_Constant}
-    min-width: 100px;
-    width: 100px;
-    font-size: 10px;
-    margin:0;
-    word-break: inherit;
-    outline: none;
-    width: inherit;
-  }
-  .contractProperty input {
-    display: none;
-  }
-  .contractProperty > .value {
-    box-sizing: border-box;
-    float: left;
-    align-self: center;
-    color: ${styles.appProperties.mainText_Color};
-    margin-left: 4px;
-  }
-  .hasArgs input {
-    display: block;
-    border: 1px solid #dddddd;
-    padding: .36em;
-    border-left: none;
-    padding: 8px 8px 8px 10px;
-    font-size: 10px;
-    height: 25px;
-  }
-  .hasArgs button {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: 0;
-  }
-`
+var modalDialog = require('./app/ui/modaldialog')
+var typeConversion = require('./app/execution/typeConversion')
+var confirmDialog = require('./app/execution/confirmDialog')
 
 /*
   trigger debugRequested
@@ -159,20 +29,13 @@ function UniversalDApp (opts = {}) {
   self._api = opts.api
   self.removable = opts.opt.removable
   self.removable_instances = opts.opt.removable_instances
-  self.el = yo`<div class=${css.udapp}></div>`
-  self.personalMode = opts.opt.personalMode || false
-  self.contracts
-  self.transactionContextAPI
   executionContext.event.register('contextChanged', this, function (context) {
     self.reset(self.contracts)
   })
-  self.txRunner = new TxRunner({}, {
-    personalMode: this.personalMode
-  })
+  self.txRunner = new TxRunner({}, opts.api)
 }
 
 UniversalDApp.prototype.reset = function (contracts, transactionContextAPI) {
-  this.el.innerHTML = ''
   this.contracts = contracts
   if (transactionContextAPI) {
     this.transactionContextAPI = transactionContextAPI
@@ -186,24 +49,28 @@ UniversalDApp.prototype.reset = function (contracts, transactionContextAPI) {
     this._addAccount('71975fbf7fe448e004ac7ae54cad0a383c3906055a65468714156a07385e96ce', '0x56BC75E2D63100000')
     executionContext.vm().stateManager.cache.flush(function () {})
   }
-  this.txRunner = new TxRunner(this.accounts, {
-    personalMode: this.personalMode
-  })
+  this.txRunner = new TxRunner(this.accounts, this._api)
 }
 
 UniversalDApp.prototype.newAccount = function (password, cb) {
   if (!executionContext.isVM()) {
-    if (!this.personalMode) {
+    if (!this._api.personalMode()) {
       return cb('Not running in personal mode')
     }
-    executionContext.web3().personal.newAccount(password, cb)
+    modalCustom.promptPassphraseCreation((error, passphrase) => {
+      if (error) {
+        modalCustom.alert(error)
+      } else {
+        executionContext.web3().personal.newAccount(passphrase, cb)
+      }
+    }, () => {})
   } else {
     var privateKey
     do {
       privateKey = crypto.randomBytes(32)
     } while (!ethJSUtil.isValidPrivate(privateKey))
-    this._addAccount(privateKey)
-    cb(null, '0x' + ethJSUtil.privateToAddress(privateKey))
+    this._addAccount(privateKey, '0x56BC75E2D63100000')
+    cb(null, '0x' + ethJSUtil.privateToAddress(privateKey).toString('hex'))
   }
 }
 
@@ -230,7 +97,7 @@ UniversalDApp.prototype.getAccounts = function (cb) {
   if (!executionContext.isVM()) {
     // Weirdness of web3: listAccounts() is sync, `getListAccounts()` is async
     // See: https://github.com/ethereum/web3.js/issues/442
-    if (self.personalMode) {
+    if (this._api.personalMode()) {
       executionContext.web3().personal.getListAccounts(cb)
     } else {
       executionContext.web3().eth.getAccounts(cb)
@@ -272,277 +139,191 @@ UniversalDApp.prototype.getBalance = function (address, cb) {
   }
 }
 
-UniversalDApp.prototype.renderInstance = function (contract, address, contractName) {
-  var abi = txHelper.sortAbiFunction(contract.abi)
-  return this.renderInstanceFromABI(abi, address, contractName)
-}
-
-// TODO this function was named before "appendChild".
-// this will render an instance: contract name, contract address, and all the public functions
-// basically this has to be called for the "atAddress" (line 393) and when a contract creation succeed
-// this returns a DOM element
-UniversalDApp.prototype.renderInstanceFromABI = function (contractABI, address, contractName) {
-  var self = this
-
-  function remove () { instance.remove() }
-
-  address = (address.slice(0, 2) === '0x' ? '' : '0x') + address.toString('hex')
-  var instance = yo`<div class="instance ${css.instance}" id="instance${address}"></div>`
-  var context = executionContext.isVM() ? 'memory' : 'blockchain'
-
-  var shortAddress = helper.shortenAddress(address)
-  var title = yo`<div class="${css.title}" onclick=${toggleClass}>
-    <div class="${css.titleText}"> ${contractName} at ${shortAddress} (${context}) </div>
-    ${copyToClipboard(() => address)}
-  </div>`
-
-  if (self.removable_instances) {
-    var close = yo`<div class="${css.udappClose}" onclick=${remove}><i class="${css.closeIcon} fa fa-close" aria-hidden="true"></i></div>`
-    instance.append(close)
-  }
-
-  function toggleClass () {
-    $(instance).toggleClass(`${css.hidesub}`)
-  }
-
-  instance.appendChild(title)
-
-  // Add the fallback function
-  var fallback = txHelper.getFallbackInterface(contractABI)
-  if (fallback) {
-    instance.appendChild(this.getCallButton({
-      funABI: fallback,
-      address: address,
-      contractAbi: contractABI,
-      contractName: contractName
-    }))
-  }
-
-  $.each(contractABI, (i, funABI) => {
-    if (funABI.type !== 'function') {
-      return
-    }
-    // @todo getData cannot be used with overloaded functions
-    instance.appendChild(this.getCallButton({
-      funABI: funABI,
-      address: address,
-      contractAbi: contractABI,
-      contractName: contractName
-    }))
-  })
-
-  return instance
-}
-
-// TODO this is used by renderInstance when a new instance is displayed.
-// this returns a DOM element.
-UniversalDApp.prototype.getCallButton = function (args) {
-  var self = this
-  // args.funABI, args.address [fun only]
-  // args.contractName [constr only]
-  var lookupOnly = args.funABI.constant
-
-  var inputs = ''
-  if (args.funABI.inputs) {
-    inputs = txHelper.inputParametersDeclarationToString(args.funABI.inputs)
-  }
-  var inputField = yo`<input></input>`
-  inputField.setAttribute('placeholder', inputs)
-  inputField.setAttribute('title', inputs)
-
-  var outputOverride = yo`<div class=${css.value}></div>`
-
-  var title
-  if (args.funABI.name) {
-    title = args.funABI.name
-  } else {
-    title = '(fallback)'
-  }
-
-  var button = yo`<button onclick=${clickButton} class="${css.instanceButton}"></button>`
-  button.classList.add(css.call)
-  button.setAttribute('title', title)
-  button.innerHTML = title
-
-  function clickButton () {
-    call(true)
-  }
-
-  function call (isUserAction) {
-    var logMsg
-    if (isUserAction) {
-      if (!args.funABI.constant) {
-        logMsg = `transact to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
-      } else {
-        logMsg = `call to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
-      }
-    }
-    txFormat.buildData(args.contractName, args.contractAbi, self.contracts, false, args.funABI, inputField.value, self, (error, data) => {
-      if (!error) {
-        if (isUserAction) {
-          if (!args.funABI.constant) {
-            self._api.logMessage(`${logMsg} pending ... `)
-          } else {
-            self._api.logMessage(`${logMsg}`)
-          }
-        }
-        txExecution.callFunction(args.address, data, args.funABI, self, (error, txResult) => {
-          if (!error) {
-            var isVM = executionContext.isVM()
-            if (isVM) {
-              var vmError = txExecution.checkVMError(txResult)
-              if (vmError.error) {
-                self._api.logMessage(`${logMsg} errored: ${vmError.message} `)
-                return
-              }
-            }
-            if (lookupOnly) {
-              var decoded = txFormat.decodeResponseToTreeView(executionContext.isVM() ? txResult.result.vm.return : ethJSUtil.toBuffer(txResult.result), args.funABI)
-              outputOverride.innerHTML = ''
-              outputOverride.appendChild(decoded)
-            }
-          } else {
-            self._api.logMessage(`${logMsg} errored: ${error} `)
-          }
-        })
-      } else {
-        self._api.logMessage(`${logMsg} errored: ${error} `)
-      }
-    }, (msg) => {
-      self._api.logMessage(msg)
-    })
-  }
-
-  var contractProperty = yo`<div class="${css.contractProperty} ${css.buttonsContainer}"></div>`
-  var contractActions = yo`<div class="${css.contractActions}" ></div>`
-
-  contractProperty.appendChild(contractActions)
-  contractActions.appendChild(button)
-  if (inputs.length) {
-    contractActions.appendChild(inputField)
-  }
-  if (lookupOnly) {
-    contractProperty.appendChild(outputOverride)
-  }
-
-  if (lookupOnly) {
-    contractProperty.classList.add(css.constant)
-    button.setAttribute('title', (title + ' - call'))
-  }
-
-  if (args.funABI.inputs && args.funABI.inputs.length > 0) {
-    contractProperty.classList.add(css.hasArgs)
-  }
-
-  if (args.funABI.payable === true) {
-    contractProperty.classList.add(css.payable)
-    button.setAttribute('title', (title + ' - transact (payable)'))
-  }
-
-  if (!lookupOnly && args.funABI.payable === false) {
-    button.setAttribute('title', (title + ' - transact (not payable)'))
-  }
-
-  return contractProperty
-}
-
 UniversalDApp.prototype.pendingTransactions = function () {
   return this.txRunner.pendingTxs
 }
 
-function execute (pipeline, env, callback) {
-  function next (err, env) {
-    if (err) return callback(err)
-    var step = pipeline.shift()
-    if (step) step(env, next)
-    else callback(null, env.result)
+UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, outputCb) {
+  const self = this
+  var logMsg
+  if (isUserAction) {
+    if (!args.funABI.constant) {
+      logMsg = `transact to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
+    } else {
+      logMsg = `call to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
+    }
   }
-  next(null, env)
+  txFormat.buildData(args.contractName, args.contractAbi, self.contracts, false, args.funABI, value, self, (error, data) => {
+    if (!error) {
+      if (isUserAction) {
+        if (!args.funABI.constant) {
+          self._api.logMessage(`${logMsg} pending ... `)
+        } else {
+          self._api.logMessage(`${logMsg}`)
+        }
+      }
+      txExecution.callFunction(args.address, data, args.funABI, self, (error, txResult) => {
+        if (!error) {
+          var isVM = executionContext.isVM()
+          if (isVM) {
+            var vmError = txExecution.checkVMError(txResult)
+            if (vmError.error) {
+              self._api.logMessage(`${logMsg} errored: ${vmError.message} `)
+              return
+            }
+          }
+          if (lookupOnly) {
+            var decoded = uiUtil.decodeResponseToTreeView(executionContext.isVM() ? txResult.result.vm.return : ethJSUtil.toBuffer(txResult.result), args.funABI)
+            outputCb(decoded)
+          }
+        } else {
+          self._api.logMessage(`${logMsg} errored: ${error} `)
+        }
+      })
+    } else {
+      self._api.logMessage(`${logMsg} errored: ${error} `)
+    }
+  }, (msg) => {
+    self._api.logMessage(msg)
+  })
+}
+
+UniversalDApp.prototype.context = function () {
+  return (executionContext.isVM() ? 'memory' : 'blockchain')
+}
+
+UniversalDApp.prototype.getABI = function (contract) {
+  return txHelper.sortAbiFunction(contract.abi)
+}
+
+UniversalDApp.prototype.getFallbackInterface = function (contractABI) {
+  return txHelper.getFallbackInterface(contractABI)
+}
+
+UniversalDApp.prototype.getInputs = function (funABI) {
+  if (!funABI.inputs) {
+    return ''
+  }
+  return txHelper.inputParametersDeclarationToString(funABI.inputs)
 }
 
 UniversalDApp.prototype.runTx = function (args, cb) {
-  var self = this
-  var tx = { to: args.to, data: args.data.dataHex, useCall: args.useCall, from: args.from, value: args.value }
-  var payLoad = { funAbi: args.data.funAbi, funArgs: args.data.funArgs, contractBytecode: args.data.contractBytecode, contractName: args.data.contractName } // contains decoded parameters
-  var pipeline = [queryGasLimit]
-  if (!args.value) {
-    pipeline.push(queryValue)
-  }
-  if (!args.from) {
-    pipeline.push(queryAddress)
-  }
-  pipeline.push(runTransaction)
-  var env = { self, tx, payLoad }
-  execute(pipeline, env, cb)
-}
-
-function queryGasLimit (env, next) {
-  var { self, tx } = env
-  tx.gasLimit = 3000000
-  if (self.transactionContextAPI.getGasLimit) {
-    self.transactionContextAPI.getGasLimit(function (err, ret) {
-      if (err) return next(err)
-      tx.gasLimit = ret
-      next(null, env)
-    })
-  } else next(null, env)
-}
-
-function queryValue (env, next) {
-  var { self, tx } = env
-  tx.value = 0
-  if (tx.useCall) return next(null, env)
-  if (self.transactionContextAPI.getValue) {
-    self.transactionContextAPI.getValue(function (err, ret) {
-      if (err) return next(err)
-      tx.value = ret
-      next(null, env)
-    })
-  } else next(null, env)
-}
-
-function queryAddress (env, next) {
-  var { self, tx } = env
-  if (self.transactionContextAPI.getAddress) {
-    self.transactionContextAPI.getAddress(function (err, ret) {
-      if (err) return next(err)
-      tx.from = ret
-      next(null, env)
-    })
-  } else {
-    self.getAccounts(function (err, ret) {
-      if (err) return next(err)
-      if (ret.length === 0) return next('No accounts available')
-      if (executionContext.isVM() && !self.accounts[ret[0]]) {
-        return next('Invalid account selected')
+  const self = this
+  async.waterfall([
+    function getGasLimit (next) {
+      if (self.transactionContextAPI.getGasLimit) {
+        return self.transactionContextAPI.getGasLimit(next)
       }
-      tx.from = ret[0]
-      next(null, env)
-    })
-  }
-}
+      next(null, 3000000)
+    },
+    function queryValue (gasLimit, next) {
+      if (args.value) {
+        return next(null, args.value, gasLimit)
+      }
+      if (args.useCall || !self.transactionContextAPI.getValue) {
+        return next(null, 0, gasLimit)
+      }
+      self.transactionContextAPI.getValue(function (err, value) {
+        next(err, value, gasLimit)
+      })
+    },
+    function getAccount (value, gasLimit, next) {
+      if (args.from) {
+        return next(null, args.from, value, gasLimit)
+      }
+      if (self.transactionContextAPI.getAddress) {
+        return self.transactionContextAPI.getAddress(function (err, address) {
+          next(err, address, value, gasLimit)
+        })
+      }
+      self.getAccounts(function (err, accounts) {
+        let address = accounts[0]
 
-function runTransaction (env, next) {
-  var { self, tx, payLoad } = env
-  var timestamp = Date.now()
-  self.event.trigger('initiatingTransaction', [timestamp, tx, payLoad])
-  self.txRunner.rawRun(tx, function (error, result) {
-    if (!tx.useCall) {
-      self.event.trigger('transactionExecuted', [error, tx.from, tx.to, tx.data, false, result, timestamp, payLoad])
-    } else {
-      self.event.trigger('callExecuted', [error, tx.from, tx.to, tx.data, true, result, timestamp, payLoad])
-    }
-    if (error) {
-      if (typeof (error) !== 'string') {
-        if (error.message) error = error.message
-        else {
-          try { error = 'error: ' + JSON.stringify(error) } catch (e) {}
+        if (err) return next(err)
+        if (!address) return next('No accounts available')
+        if (executionContext.isVM() && !self.accounts[address]) {
+          return next('Invalid account selected')
         }
-      }
+        next(null, address, value, gasLimit)
+      })
+    },
+    function runTransaction (fromAddress, value, gasLimit, next) {
+      var tx = { to: args.to, data: args.data.dataHex, useCall: args.useCall, from: fromAddress, value: value, gasLimit: gasLimit }
+      var payLoad = { funAbi: args.data.funAbi, funArgs: args.data.funArgs, contractBytecode: args.data.contractBytecode, contractName: args.data.contractName }
+      var timestamp = Date.now()
+
+      self.event.trigger('initiatingTransaction', [timestamp, tx, payLoad])
+      self.txRunner.rawRun(tx,
+
+        (network, tx, gasEstimation, continueTxExecution, cancelCb) => {
+          if (network.name !== 'Main') {
+            return continueTxExecution(null)
+          }
+          var amount = executionContext.web3().fromWei(typeConversion.toInt(tx.value), 'ether')
+          var content = confirmDialog(tx, amount, gasEstimation, self,
+            (gasPrice, cb) => {
+              let txFeeText, priceStatus
+              // TODO: this try catch feels like an anti pattern, can/should be
+              // removed, but for now keeping the original logic
+              try {
+                var fee = executionContext.web3().toBigNumber(tx.gas).mul(executionContext.web3().toBigNumber(executionContext.web3().toWei(gasPrice.toString(10), 'gwei')))
+                txFeeText = ' ' + executionContext.web3().fromWei(fee.toString(10), 'ether') + ' Ether'
+                priceStatus = true
+              } catch (e) {
+                txFeeText = ' Please fix this issue before sending any transaction. ' + e.message
+                priceStatus = false
+              }
+              cb(txFeeText, priceStatus)
+            },
+            (cb) => {
+              executionContext.web3().eth.getGasPrice((error, gasPrice) => {
+                var warnMessage = ' Please fix this issue before sending any transaction. '
+                if (error) {
+                  return cb('Unable to retrieve the current network gas price.' + warnMessage + error)
+                }
+                try {
+                  var gasPriceValue = executionContext.web3().fromWei(gasPrice.toString(10), 'gwei')
+                  cb(null, gasPriceValue)
+                } catch (e) {
+                  cb(warnMessage + e.message, null, false)
+                }
+              })
+            }
+          )
+          modalDialog('Confirm transaction', content,
+            { label: 'Confirm',
+              fn: () => {
+                self._api.config.setUnpersistedProperty('doNotShowTransactionConfirmationAgain', content.querySelector('input#confirmsetting').checked)
+                // TODO: check if this is check is still valid given the refactor
+                if (!content.gasPriceStatus) {
+                  cancelCb('Given gas price is not correct')
+                } else {
+                  var gasPrice = executionContext.web3().toWei(content.querySelector('#gasprice').value, 'gwei')
+                  continueTxExecution(gasPrice)
+                }
+              }}, {
+                label: 'Cancel',
+                fn: () => {
+                  return cancelCb('Transaction canceled by user.')
+                }
+              })
+        },
+
+        function (error, result) {
+          let eventName = (tx.useCall ? 'callExecuted' : 'transactionExecuted')
+          self.event.trigger(eventName, [error, tx.from, tx.to, tx.data, tx.useCall, result, timestamp, payLoad])
+
+          if (error && (typeof (error) !== 'string')) {
+            if (error.message) error = error.message
+            else {
+              try { error = 'error: ' + JSON.stringify(error) } catch (e) {}
+            }
+          }
+          next(error, result)
+        }
+      )
     }
-    env.result = result
-    next(error, env)
-  })
+  ], cb)
 }
 
 module.exports = UniversalDApp

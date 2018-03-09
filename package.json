@@ -1,18 +1,18 @@
 {
   "private": true,
-  "name": "@shyftnetwork/shyft_browser-solidity",
+  "name": "@shyftnetwork/shyft_remix-ide",
   "version": "0.0.1",
   "description": "Minimalistic browser-based Solidity IDE",
   "devDependencies": {
     "@shyftnetwork/shyft_ethereumjs-block": "^1.7.1",
-    "@shyftnetwork/shyft_ethereumjs-vm": "^2.3.5",
     "async": "^2.1.2",
     "babel-preset-env": "^1.6.1",
     "babel-eslint": "^7.1.1",
     "babel-plugin-transform-object-assign": "^6.22.0",
     "babel-plugin-yo-yoify": "^0.3.3",
     "babel-polyfill": "^6.22.0",
-    "babel-preset-es2015": "^6.24.1",
+    "babel-preset-env": "^1.6.1",
+    "babel-preset-es2015": "^6.24.0",
     "babel-preset-stage-0": "^6.24.1",
     "babelify": "^7.3.0",
     "brace": "^0.8.0",
@@ -31,7 +31,7 @@
     "fast-levenshtein": "^2.0.6",
     "http-server": "0.9.0",
     "javascript-serialize": "^1.6.1",
-    "jquery": "^2.2.0",
+    "jquery": "^3.3.1",
     "js-base64": "^2.1.9",
     "js-beautify": "1.6.14",
     "minixhr": "^3.2.2",
@@ -45,10 +45,10 @@
     "remix-debugger": "latest",
     "remix-lib": "latest",
     "remix-solidity": "latest",
-    "remixd": "^0.1.2",
+    "remixd": "git+https://github.com/ethereum/remixd.git",
+    "request": "^2.83.0",
     "rimraf": "^2.6.1",
     "selenium-standalone": "^6.0.1",
-    "solc": "https://github.com/ethereum/solc-js",
     "standard": "^8.5.0",
     "swarmgw": "^0.2.0",
     "tape": "^4.5.1",
@@ -61,7 +61,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ethereum/browser-solidity.git"
+    "url": "git+https://github.com/ethereum/remix-ide.git"
   },
   "keywords": [
     "ethereum",
@@ -69,11 +69,14 @@
     "compiler"
   ],
   "author": "cf <chris@shyft.network>",
+  "contributors": [
+    "chriseth"
+  ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/ethereum/browser-solidity/issues"
+    "url": "https://github.com/shyftnetwork/shyft_remix-ide/issues"
   },
-  "homepage": "https://github.com/ethereum/browser-solidity#readme",
+  "homepage": "https://github.com/shyftnetwork/shyft_remix-ide#readme",
   "standard": {
     "ignore": [
       "build/",
@@ -139,12 +142,16 @@
     ]
   },
   "scripts": {
-    "pullremix": "mkdir remix; git clone https://github.com/ethereum/remix; cd ..",
-    "linkremix": "npm-link-local ./remix/remix-lib && npm-link-local ./remix/remix-core && npm-link-local ./remix/remix-solidity && npm-link-local ./remix/remix-debugger",
+    "setupremix": "npm run pullremix && npm run linkremixcore && npm run linkremixlib && npm run linkremixsolidity && npm run linkremixdebugger;",
+    "pullremix": "git clone https://github.com/ethereum/remix",
+    "linkremixcore": "cd node_modules && rm -rf remix-core && ln -s ../remix/remix-core remix-core && cd ..",
+    "linkremixlib": "cd node_modules && rm -rf remix-lib && ln -s ../remix/remix-lib remix-lib && cd ..",
+    "linkremixsolidity": "cd node_modules && rm -rf remix-solidity && ln -s ../remix/remix-solidity remix-solidity && cd ..",
+    "linkremixdebugger": "cd node_modules && rm -rf remix-debugger && ln -s ../remix/remix-debugger remix-debugger && cd ..",
     "build": "browserify src/index.js -o build/app.js",
     "browsertest": "sleep 5 && npm run nightwatch_local",
     "csslint": "csslint --ignore=order-alphabetical --errors='errors,duplicate-properties,empty-rules' --exclude-list='assets/css/font-awesome.min.css' assets/css/",
-    "downloadsolc": "rimraf soljson.js; wget https://ethereum.github.io/solc-bin/soljson.js",
+    "downloadsolc": "rimraf soljson.js && cd node_modules/solc && wget https://ethereum.github.io/solc-bin/soljson.js && cd ../../",
     "lint": "standard | notify-error",
     "make-mock-compiler": "node ci/makeMockCompiler.js",
     "minify": "uglifyjs --in-source-map inline --source-map-inline -c warnings=false",
@@ -156,12 +163,12 @@
     "nightwatch_remote_safari": "nightwatch --config nightwatch.js --env safari",
     "onchange": "onchange build/app.js -- npm-run-all lint",
     "prepublish": "mkdirp build; npm-run-all -ls downloadsolc build",
-    "remixd": "remixd -S ./contracts",
+    "remixd": "node ./node_modules/remixd/src/main.js -s ./contracts",
     "selenium": "execr --silent selenium-standalone start",
     "selenium-install": "selenium-standalone install",
     "serve": "execr --silent http-server .",
     "sourcemap": "exorcist --root ../ build/app.js.map > build/app.js",
-    "start": "npm-run-all -lpr serve watch onchange",
+    "start": "npm-run-all -lpr serve watch onchange remixd",
     "test": "npm run csslint; standard && node test/index.js",
     "test-browser": "npm-run-all -lpr selenium downloadsolc make-mock-compiler serve browsertest",
     "watch": "watchify src/index.js -dv -p browserify-reload -o build/app.js"

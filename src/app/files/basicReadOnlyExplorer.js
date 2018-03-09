@@ -5,7 +5,9 @@ class BasicReadOnlyExplorer {
   constructor (type) {
     this.event = new EventManager()
     this.files = {}
+    this.paths = {}
     this.normalizedNames = {} // contains the raw url associated with the displayed path
+    this.paths[type] = {}
     this.type = type
     this.readonly = true
   }
@@ -19,13 +21,16 @@ class BasicReadOnlyExplorer {
     this.files = {}
   }
 
-  exists (path) {
-    if (!this.files) return false
-    return this.files[path] !== undefined
+  exists (path, cb) {
+    if (!this.files) return cb(null, false)
+    var unprefixedPath = this.removePrefix(path)
+    cb(null, this.files[unprefixedPath] !== undefined)
   }
 
   get (path, cb) {
-    var content = this.files[path]
+    if (this.normalizedNames[path]) path = this.normalizedNames[path] // ensure we actually use the normalized path from here
+    var unprefixedPath = this.removePrefix(path)
+    var content = this.files[unprefixedPath]
     if (!content) {
       content = this.files[this.type + '/' + this.normalizedNames[path]]
     }
@@ -36,19 +41,33 @@ class BasicReadOnlyExplorer {
   }
 
   set (path, content, cb) {
-    this.addReadOnly(path, content)
+    var unprefixedPath = this.removePrefix(path)
+    this.addReadOnly(unprefixedPath, content)
     if (cb) cb()
     return true
   }
 
   addReadOnly (path, content, rawPath) {
-    var unprefixedPath = this.removePrefix(path)
     try { // lazy try to format JSON
       content = JSON.stringify(JSON.parse(content), null, '\t')
     } catch (e) {}
-    this.files[this.type + '/' + unprefixedPath] = content
+    if (!rawPath) rawPath = path
+    // splitting off the path in a tree structure, the json tree is used in `resolveDirectory`
+    var split = path
+    var folder = false
+    while (split.lastIndexOf('/') !== -1) {
+      var subitem = split.substring(split.lastIndexOf('/'))
+      split = split.substring(0, split.lastIndexOf('/'))
+      if (!this.paths[this.type + '/' + split]) {
+        this.paths[this.type + '/' + split] = {}
+      }
+      this.paths[this.type + '/' + split][split + subitem] = { isDirectory: folder }
+      folder = true
+    }
+    this.paths[this.type][split] = { isDirectory: folder }
+    this.files[path] = content
     this.normalizedNames[rawPath] = path
-    this.event.trigger('fileAdded', [this.type + '/' + unprefixedPath, true])
+    this.event.trigger('fileAdded', [path, true])
     return true
   }
 
@@ -57,7 +76,6 @@ class BasicReadOnlyExplorer {
   }
 
   remove (path) {
-    delete this.files[path]
   }
 
   rename (oldPath, newPath, isFolder) {
@@ -68,46 +86,12 @@ class BasicReadOnlyExplorer {
     return this.files
   }
 
-  //
-  // Tree model for files
-  // {
-  //   'a': { }, // empty directory 'a'
-  //   'b': {
-  //     'c': {}, // empty directory 'b/c'
-  //     'd': { '/readonly': true, '/content': 'Hello World' } // files 'b/c/d'
-  //     'e': { '/readonly': false, '/path': 'b/c/d' } // symlink to 'b/c/d'
-  //     'f': { '/readonly': false, '/content': '<executable>', '/mode': 0755 }
-  //   }
-  // }
-  //
-  listAsTree () {
-    function hashmapize (obj, path, val) {
-      var nodes = path.split('/')
-      var i = 0
-
-      for (; i < nodes.length - 1; i++) {
-        var node = nodes[i]
-        if (obj[node] === undefined) {
-          obj[node] = {}
-        }
-        obj = obj[node]
-      }
-
-      obj[nodes[i]] = val
-    }
-
-    var tree = {}
-
+  resolveDirectory (path, callback) {
     var self = this
-    // This does not include '.remix.config', because it is filtered
-    // inside list().
-    Object.keys(this.list()).forEach(function (path) {
-      hashmapize(tree, path, {
-        '/readonly': self.isReadOnly(path),
-        '/content': self.get(path)
-      })
-    })
-    return tree
+    if (path[0] === '/') path = path.substring(1)
+    if (!path) return callback(null, { [self.type]: { } })
+    // we just return the json tree populated by `addReadOnly`
+    callback(null, this.paths[path])
   }
 
   removePrefix (path) {

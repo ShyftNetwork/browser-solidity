@@ -1,6 +1,6 @@
 'use strict'
 
-var TRAVIS_JOB_NUMBER = process.env.TRAVIS_JOB_NUMBER
+var buildId = process.env.CIRCLE_BUILD_NUM || process.env.TRAVIS_JOB_NUMBER
 
 module.exports = {
   'src_folders': ['test-browser/tests'],
@@ -31,8 +31,8 @@ module.exports = {
         'browserName': 'firefox',
         'javascriptEnabled': true,
         'acceptSslCerts': true,
-        'build': 'build-' + TRAVIS_JOB_NUMBER,
-        'tunnel-identifier': 'browsersolidity_tests_' + TRAVIS_JOB_NUMBER
+        'build': 'build-' + buildId,
+        'tunnel-identifier': 'browsersolidity_tests_' + buildId
       }
     },
 
@@ -41,8 +41,8 @@ module.exports = {
         'browserName': 'chrome',
         'javascriptEnabled': true,
         'acceptSslCerts': true,
-        'build': 'build-' + TRAVIS_JOB_NUMBER,
-        'tunnel-identifier': 'browsersolidity_tests_' + TRAVIS_JOB_NUMBER,
+        'build': 'build-' + buildId,
+        'tunnel-identifier': 'browsersolidity_tests_' + buildId,
         'chromeOptions': {
           'args': ['window-size=2560,1440', 'start-fullscreen']
         }
@@ -56,8 +56,8 @@ module.exports = {
         'platform': 'OS X 10.11',
         'version': '10.0',
         'acceptSslCerts': true,
-        'build': 'build-' + TRAVIS_JOB_NUMBER,
-        'tunnel-identifier': 'browsersolidity_tests_' + TRAVIS_JOB_NUMBER
+        'build': 'build-' + buildId,
+        'tunnel-identifier': 'browsersolidity_tests_' + buildId
       }
     },
 
@@ -68,8 +68,8 @@ module.exports = {
         'platform': 'Windows 10',
         'acceptSslCerts': true,
         'version': '11.103',
-        'build': 'build-' + TRAVIS_JOB_NUMBER,
-        'tunnel-identifier': 'browsersolidity_tests_' + TRAVIS_JOB_NUMBER
+        'build': 'build-' + buildId,
+        'tunnel-identifier': 'browsersolidity_tests_' + buildId
       }
     },
 

@@ -1,7 +1,7 @@
 var yo = require('yo-yo')
 // -------------- copyToClipboard ----------------------
 var csjs = require('csjs-inject')
-var styleGuide = require('remix-lib').ui.themeChooser
+var styleGuide = require('@shyftnetwork/shyft_remix-lib').ui.themeChooser
 var styles = styleGuide.chooser()
 
 var css = csjs`

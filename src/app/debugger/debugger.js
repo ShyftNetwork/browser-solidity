@@ -1,8 +1,8 @@
 'use strict'
 
-var remixDebugger = require('remix-debugger')
-var remixLib = require('remix-lib')
-var remixCore = require('remix-core')
+var remixDebugger = require('@shyftnetwork/shyft_remix-debugger')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
+var remixCore = require('@shyftnetwork/shyft_remix-core')
 var executionContext = require('../../execution-context')
 
 /**

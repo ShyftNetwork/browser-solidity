@@ -35,7 +35,7 @@
 // user-card.js
 var yo = require('yo-yo')
 var csjs = require('csjs-inject')
-var EventManager = require('remix-lib').EventManager
+var EventManager = require('@shyftnetwork/shyft_remix-lib').EventManager
 
 var css = csjs`
   .userCard        {
@@ -111,7 +111,7 @@ module.exports = UserCard
 ```js
 /*****************************************************************************/
 // 1. SETUP CONTEXT
-var EventManager = require('remix-lib').EventManager
+var EventManager = require('@shyftnetwork/shyft_remix-lib').EventManager
 var funds = { event: new EventManager() }
 var userfunds = 15
 function getUserFunds () { return userfunds }

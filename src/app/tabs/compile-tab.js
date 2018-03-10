@@ -6,11 +6,11 @@ var parseContracts = require('../contract/contractParser')
 var publishOnSwarm = require('../contract/publishOnSwarm')
 var modalDialog = require('../ui/modaldialog')
 var modalDialogCustom = require('../ui/modal-dialog-custom')
-var TreeView = require('remix-debugger').ui.TreeView
+var TreeView = require('@shyftnetwork/shyft_remix-debugger').ui.TreeView
 var copyToClipboard = require('../ui/copy-to-clipboard')
 
 var css = require('./styles/compile-tab-styles')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var styleGuide = remixLib.ui.themeChooser
 var styles = styleGuide.chooser()
 

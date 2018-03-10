@@ -1,5 +1,5 @@
 'use strict'
-var SourceMappingDecoder = require('remix-lib').SourceMappingDecoder
+var SourceMappingDecoder = require('@shyftnetwork/shyft_remix-lib').SourceMappingDecoder
 
 function offsetToColumnConverter (compilerEvent) {
   this.lineBreakPositionsByContent = {}

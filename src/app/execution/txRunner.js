@@ -1,6 +1,6 @@
 'use strict'
 var EthJSTX = require('ethereumjs-tx')
-var EthJSBlock = require('ethereumjs-block')
+var EthJSBlock = require('@shyftnetwork/shyft_ethereumjs-block')
 var ethJSUtil = require('ethereumjs-util')
 var BN = ethJSUtil.BN
 var executionContext = require('../../execution-context')

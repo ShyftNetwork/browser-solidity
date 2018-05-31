@@ -8,3 +8,7 @@ babelify-src
 package-lock.json
 remix
 .DS_Store
+.idea
+CMakeLists.txt
+cmake-build-debug
+

@@ -64,7 +64,7 @@ function runTests (browser, testData) {
     .click('.websocketconn')
     .waitForElementVisible('#modal-footer-ok', 10000)
     .click('#modal-footer-ok')
-    .waitForElementVisible('[data-path="localhost"]', 200000)
+    .waitForElementVisible('[data-path="localhost"]', 100000)
     .click('[data-path="localhost"]')
     .waitForElementVisible('[data-path="localhost/folder1"]')
     .click('[data-path="localhost/folder1"]')

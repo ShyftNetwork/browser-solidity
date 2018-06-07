@@ -5,7 +5,7 @@ var $ = require('jquery')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var utils = remixLib.util
 
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = require('./styles/staticAnalysisView-styles')
@@ -90,7 +90,7 @@ staticAnalysisView.prototype.run = function () {
           }
           warningCount++
           var msg = yo`<span>${location} ${item.warning} ${item.more ? yo`<span><br><a href="${item.more}" target="blank">more</a></span>` : yo`<span></span>`}</span>`
-          self.appAPI.renderWarning(msg, warningContainer, {type: 'warning', useSpan: true})
+          self.appAPI.renderWarning(msg, warningContainer, {type: 'staticAnalysisWarning', useSpan: true})
         })
       })
       if (warningContainer.html() === '') {

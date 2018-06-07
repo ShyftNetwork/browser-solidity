@@ -1,6 +1,5 @@
 var csjs = require('csjs-inject')
-var remixLib = require('@shyftnetwork/shyft_remix-lib')
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = csjs`
@@ -28,20 +27,20 @@ var css = csjs`
     display           : flex;
     align-items       : center;
     width             : 100%;
-    padding           : 5px;
   }
   .clear           {
-    margin-left       : 10px;
-    margin-right      : 10px; 
+    margin-right      : 20px;
     width             : 10px;
     cursor            : pointer;
     color             : ${styles.terminal.icon_Color_TogglePanel};
+    display           : flex;
   }
   .clear:hover              {
     color             : ${styles.terminal.icon_HoverColor_Menu};
   }
   .toggleTerminal              {
-    margin-right      : 10px;
+    margin-right      : 20px;
+    margin-left       : 20px;
     font-size         : 14px;
     font-weight       : bold;
     cursor            : pointer;
@@ -57,6 +56,7 @@ var css = csjs`
     height            : 100%;
     overflow-y        : auto;
     font-family       : monospace;
+    margin            : 0px;
   }
   .terminal_bg     {
     display           : flex;
@@ -91,8 +91,9 @@ var css = csjs`
     word-break        : break-all;
     white-space       : pre-wrap;
     line-height       : 2ch;
-    margin            : 1ch;
+    padding           : 1ch;
     margin-top        : 2ch;
+    border-top        : 0.07ch solid ${styles.colors.veryLightGrey};
   }
   .cli                {
     line-height       : 1.7em;
@@ -106,7 +107,7 @@ var css = csjs`
     margin-right      : 0.5em;
     font-family       : monospace;
     font-weight       : bold;
-    font-size         : large;
+    font-size         : 14px;
     color             : ${styles.appProperties.supportText_OppositeColor};
   }
   .input              {
@@ -138,9 +139,21 @@ var css = csjs`
     align-items                 : center;
     justify-content             : center;
   }
-  .listen {
-    min-width         : 120px;
-    display           : flex;
+  .listen {}
+  .verticalLine {
+    border-left       : 1px solid ${styles.colors.veryLightGrey};
+    height            : 65%;
+    margin-right      : 30px;   }
+  .pendingTx {
+    border            : 1px solid ${styles.terminal.icon_HoverColor_Menu};
+    border-radius: 50%;
+    margin-right: 30px;
+    min-width: 13px;
+    height: 13px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 10px;
   }
   .dragbarHorizontal  {
     position          : absolute;

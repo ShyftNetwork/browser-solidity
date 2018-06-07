@@ -10,13 +10,18 @@ module.exports = {
     contractHelper.addFile(browser, 'scenario.json', {content: records}, () => {
       browser
         .click('.runView')
+        .click('div[class^="cardContainer"] i[class^="arrow"]')
         .click('#runTabView .runtransaction')
+        .waitForElementPresent('.instance:nth-of-type(2)')
+        .click('.instance:nth-of-type(2)')
+        .waitForElementPresent('.instance:nth-of-type(3)')
+        .click('.instance:nth-of-type(3)')
         .clickFunction('getInt - call')
         .clickFunction('getAddress - call')
         .clickFunction('getFromLib - call')
-        .waitForElementPresent('div[class^="contractProperty"] div[class^="value"]')
+        .waitForElementPresent('div[class^="contractActionsContainer"] div[class^="value"] ul')
         .perform((client, done) => {
-          contractHelper.verifyCallReturnValue(browser, '0x35ef07393b57464e93deb59175ff72e6499450cf', ['0: uint256: 1', '0: uint256: 3456', '0: address: 0x35ef07393b57464e93deb59175ff72e6499450cf'], () => {
+          contractHelper.verifyCallReturnValue(browser, '0x35ef07393b57464e93deb59175ff72e6499450cf', ['0: uint256: 1', '0: uint256: 3456', '0: address: 0x35eF07393b57464e93dEB59175fF72E6499450cF'], () => {
             done()
           })
         })
@@ -31,6 +36,8 @@ module.exports = {
             done()
           })
         })
+        .waitForElementPresent('.instance:nth-of-type(2)')
+        .click('.instance:nth-of-type(2)')
         .perform((client, done) => {
           browser.clickFunction('set - transact (not payable)', {types: 'uint256 _p', values: '34'})
               .click('i.savetransaction').modalFooterOKClick().getEditorValue(function (result) {

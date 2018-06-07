@@ -21,9 +21,10 @@ function Renderer (appAPI) {
  *
  * @param {String or DOMElement} message
  * @param {DOMElement} container
- * @param {Object} options {useSpan, noAnnotations, click:(Function), type:(warning, error), errFile, errLine, errCol}
+ * @param {Object} options {useSpan, noAnnotations, click:(Function), type:(warning, error, staticAnalysisWarning), errFile, errLine, errCol}
  */
 Renderer.prototype.error = function (message, container, opt) {
+  if (!message) return
   if (container === undefined) return
   opt = opt || {}
 
@@ -55,7 +56,7 @@ Renderer.prototype.error = function (message, container, opt) {
   var $pre = $(opt.useSpan ? yo`<span />` : yo`<pre />`).html(message)
 
   var $error = $(yo`<div class="sol ${opt.type}"><div class="close"><i class="fa fa-close"></i></div></div>`).prepend($pre)
-  container.append($error)
+  $(container).append($error)
 
   $error.click((ev) => {
     if (opt.errFile && opt.errLine) {

@@ -1,5 +1,5 @@
 var yo = require('yo-yo')
-var Treeview = require('@shyftnetwork/shyft_remix-debugger').ui.TreeView
+var Treeview = require('../ui/TreeView')
 var modalDialog = require('../ui/modaldialog')
 var modalDialogCustom = require('../ui/modal-dialog-custom')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
@@ -9,6 +9,8 @@ var addTooltip = require('../ui/tooltip')
 var helper = require('../../lib/helper')
 
 var css = require('./styles/file-explorer-styles')
+
+let MENU_HANDLE
 
 function fileExplorer (appAPI, files) {
   var self = this
@@ -26,7 +28,7 @@ function fileExplorer (appAPI, files) {
   }
 
   this.files.event.register('fileExternallyChanged', (path, file) => {
-    if (appAPI.config.get('currentFile') === path && appAPI.currentContent() !== file.content) {
+    if (appAPI.config.get('currentFile') === path && appAPI.currentContent() && appAPI.currentContent() !== file.content) {
       modalDialog(path + ' changed', remixdDialog(),
         {
           label: 'Keep the content displayed in Remix',
@@ -119,7 +121,8 @@ function fileExplorer (appAPI, files) {
   })
 
   self.treeView.event.register('nodeRightClick', function (key, data, label, event) {
-    contextMenu(event, {
+    MENU_HANDLE && MENU_HANDLE.hide(null, true)
+    MENU_HANDLE = contextMenu(event, {
       'Rename': () => {
         if (self.files.readonly) { return addTooltip('cannot rename folder. ' + self.files.type + ' is a read only explorer') }
         var name = label.querySelector('label[data-path="' + key + '"]')
@@ -133,7 +136,8 @@ function fileExplorer (appAPI, files) {
   })
 
   self.treeView.event.register('leafRightClick', function (key, data, label, event) {
-    contextMenu(event, {
+    MENU_HANDLE && MENU_HANDLE.hide(null, true)
+    MENU_HANDLE = contextMenu(event, {
       'Rename': () => {
         if (self.files.readonly) { return addTooltip('cannot rename file. ' + self.files.type + ' is a read only explorer') }
         var name = label.querySelector('label[data-path="' + key + '"]')

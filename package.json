@@ -21,21 +21,19 @@
     "csjs-inject": "^1.0.1",
     "csslint": "^1.0.2",
     "deep-equal": "^1.0.1",
-    "ethereumjs-abi": "https://github.com/ethereumjs/ethereumjs-abi",
-    "ethereumjs-tx": "^1.3.3",
     "ethereumjs-util": "^5.1.2",
     "execr": "^1.0.1",
     "exorcist": "^0.4.0",
-    "fast-async": "^6.1.2",
+    "fast-async": "6.3.1",
     "fast-levenshtein": "^2.0.6",
-    "http-server": "0.9.0",
+    "gists": "^1.0.1",
     "javascript-serialize": "^1.6.1",
     "jquery": "^3.3.1",
     "js-base64": "^2.1.9",
     "js-beautify": "1.6.14",
     "minixhr": "^3.2.2",
     "mkdirp": "^0.5.1",
-    "nightwatch": "^0.9.3",
+    "nightwatch": "^0.9.20",
     "notify-error": "^1.2.0",
     "npm-link-local": "^1.1.0",
     "npm-run-all": "^4.0.2",
@@ -56,7 +54,12 @@
     "watchify": "^3.9.0",
     "web3": "^0.18.0",
     "webworkify": "^1.2.1",
-    "yo-yo": "^1.2.2"
+    "yo-yo": "^1.2.2",
+    "yo-yoify": "^3.7.3"
+  },
+  "dependencies": {
+    "http-server": "0.9.0",
+    "remixd": "git+https://github.com/ethereum/remixd.git"
   },
   "repository": {
     "type": "git",
@@ -140,17 +143,21 @@
       ]
     ]
   },
+  "bin": {
+    "remix-ide": "./bin/remix-ide"
+  },
   "scripts": {
-    "setupremix": "npm run pullremix && npm run linkremixcore && npm run linkremixlib && npm run linkremixsolidity && npm run linkremixdebugger;",
+    "setupremix": "npm run pullremix && npm run linkremixcore && npm run linkremixlib && npm run linkremixsolidity;",
     "pullremix": "git clone https://github.com/ethereum/remix",
     "linkremixcore": "cd node_modules && rm -rf remix-core && ln -s ../remix/remix-core remix-core && cd ..",
     "linkremixlib": "cd node_modules && rm -rf remix-lib && ln -s ../remix/remix-lib remix-lib && cd ..",
     "linkremixsolidity": "cd node_modules && rm -rf remix-solidity && ln -s ../remix/remix-solidity remix-solidity && cd ..",
-    "linkremixdebugger": "cd node_modules && rm -rf remix-debugger && ln -s ../remix/remix-debugger remix-debugger && cd ..",
     "build": "browserify src/index.js -o build/app.js",
+    "build_debugger": "browserify src/app/debugger/remix-debugger/index.js -o src/app/debugger/remix-debugger/build/app.js",
     "browsertest": "sleep 5 && npm run nightwatch_local",
     "csslint": "csslint --ignore=order-alphabetical --errors='errors,duplicate-properties,empty-rules' --exclude-list='assets/css/font-awesome.min.css' assets/css/",
-    "downloadsolc": "rimraf soljson.js && cd node_modules/solc && wget https://shyftnetwork.github.io/shyft_solc-bin/soljson.js && cd ../../",
+    "downloadsolc": "rimraf soljson.js && cd node_modules/solc && wget --no-check-certificate https://shyftnetwork.github.io/shyft_solc-bin/soljson.js && cd ../../",
+    "downloadsolc_root": "wget --no-check-certificate https://shyftnetwork.github.io/shyft_solc-bin/soljson.js",
     "lint": "standard | notify-error",
     "make-mock-compiler": "node ci/makeMockCompiler.js",
     "minify": "uglifyjs --in-source-map inline --source-map-inline -c warnings=false",
@@ -160,16 +167,18 @@
     "nightwatch_remote_ie": "nightwatch --config nightwatch.js --env ie",
     "nightwatch_remote_parallel": "nightwatch --config nightwatch.js --env safari,chrome,default",
     "nightwatch_remote_safari": "nightwatch --config nightwatch.js --env safari",
+    "nightwatch_remote_debugger_parallel": "nightwatch --config nightwatch_debugger.js --env safari,chrome,default",
     "onchange": "onchange build/app.js -- npm-run-all lint",
-    "prepublish": "mkdirp build; npm-run-all -ls downloadsolc build",
-    "remixd": "node ./node_modules/remixd/src/main.js -s ./contracts",
+    "prepublish": "mkdirp build; npm-run-all -ls downloadsolc_root build",
+    "remixd": "./node_modules/remixd/bin/remixd -s ./contracts",
     "selenium": "execr --silent selenium-standalone start",
     "selenium-install": "selenium-standalone install",
     "serve": "execr --silent http-server .",
+    "serve_debugger": "execr --silent http-server src/app/debugger/remix-debugger",
     "sourcemap": "exorcist --root ../ build/app.js.map > build/app.js",
     "start": "npm-run-all -lpr serve watch onchange remixd",
     "test": "npm run csslint; standard && node test/index.js",
-    "test-browser": "npm-run-all -lpr selenium downloadsolc make-mock-compiler serve browsertest",
+    "test-browser": "npm-run-all -lpr selenium downloadsolc_root make-mock-compiler serve browsertest",
     "watch": "watchify src/index.js -dv -p browserify-reload -o build/app.js"
   }
 }

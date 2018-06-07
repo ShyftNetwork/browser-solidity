@@ -4,7 +4,6 @@ var $ = require('jquery')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var yo = require('yo-yo')
 var EventManager = remixLib.EventManager
-var imports = require('../compiler/compiler-imports')
 
 /*
   attach to files event (removed renamed)
@@ -25,9 +24,11 @@ class FileManager {
     this.opt.filesProviders['browser'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
     this.opt.filesProviders['localhost'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
     this.opt.filesProviders['config'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
+    this.opt.filesProviders['gist'].event.register('fileRenamed', (oldName, newName, isFolder) => { this.fileRenamedEvent(oldName, newName, isFolder) })
     this.opt.filesProviders['browser'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
     this.opt.filesProviders['localhost'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
     this.opt.filesProviders['config'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
+    this.opt.filesProviders['gist'].event.register('fileRemoved', (path) => { this.fileRemovedEvent(path) })
 
     // tabs
     var $filesEl = $('#files')
@@ -154,12 +155,20 @@ class FileManager {
     }
   }
 
+  filesFromPath (path, cb) {
+    var provider = this.fileProviderOf(path)
+    if (provider) {
+      return provider.resolveDirectory(path, (error, filesTree) => { cb(error, filesTree) })
+    }
+    cb(`provider for path ${path} not found`)
+  }
+
   fileProviderOf (file) {
     var provider = file.match(/[^/]*/)
     if (provider !== null && this.opt.filesProviders[provider[0]]) {
       return this.opt.filesProviders[provider[0]]
     } else {
-      for (var handler of imports.handlers()) {
+      for (var handler of this.opt.compilerImport.handlers()) {
         if (handler.match.exec(file)) {
           return this.opt.filesProviders[handler.type]
         }
@@ -172,11 +181,13 @@ class FileManager {
     var currentFile = this.opt.config.get('currentFile')
     if (currentFile && this.opt.editor.current()) {
       var input = this.opt.editor.get(currentFile)
-      var provider = this.fileProviderOf(currentFile)
-      if (provider) {
-        provider.set(currentFile, input)
-      } else {
-        console.log('cannot save ' + currentFile + '. Does not belong to any explorer')
+      if (input) {
+        var provider = this.fileProviderOf(currentFile)
+        if (provider) {
+          provider.set(currentFile, input)
+        } else {
+          console.log('cannot save ' + currentFile + '. Does not belong to any explorer')
+        }
       }
     }
   }

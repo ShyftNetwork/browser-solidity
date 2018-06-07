@@ -1,6 +1,5 @@
 var csjs = require('csjs-inject')
-var remixLib = require('@shyftnetwork/shyft_remix-lib')
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = csjs`
@@ -11,6 +10,7 @@ var css = csjs`
     display           : flex;
     flex-direction    : column;
     margin-right      : 10px;
+    width             : auto;
   }
   .selectbox          {
     display           : flex;

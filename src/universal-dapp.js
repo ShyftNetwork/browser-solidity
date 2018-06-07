@@ -1,13 +1,14 @@
 /* global */
 'use strict'
 
+var yo = require('yo-yo')
 var async = require('async')
 var ethJSUtil = require('ethereumjs-util')
 var BN = ethJSUtil.BN
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 var crypto = require('crypto')
-var TxRunner = require('./app/execution/txRunner')
+var TxRunner = remixLib.execution.txRunner
 var txExecution = remixLib.execution.txExecution
 var txFormat = remixLib.execution.txFormat
 var txHelper = remixLib.execution.txHelper
@@ -16,7 +17,7 @@ var modalCustom = require('./app/ui/modal-dialog-custom')
 var uiUtil = require('./app/ui/util')
 
 var modalDialog = require('./app/ui/modaldialog')
-var typeConversion = require('./app/execution/typeConversion')
+var typeConversion = remixLib.execution.typeConversion
 var confirmDialog = require('./app/execution/confirmDialog')
 
 /*
@@ -50,6 +51,14 @@ UniversalDApp.prototype.reset = function (contracts, transactionContextAPI) {
     executionContext.vm().stateManager.cache.flush(function () {})
   }
   this.txRunner = new TxRunner(this.accounts, this._api)
+  this.txRunner.event.register('transactionBroadcasted', (txhash) => {
+    this._api.detectNetwork((error, network) => {
+      if (!error && network) {
+        var txLink = executionContext.txDetailsLink(network.name, txhash)
+        if (txLink) this._api.logHtmlMessage(yo`<a href="${txLink}" target="_blank">${txLink}</a>`)
+      }
+    })
+  })
 }
 
 UniversalDApp.prototype.newAccount = function (password, cb) {
@@ -153,7 +162,7 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
       logMsg = `call to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
     }
   }
-  txFormat.buildData(args.contractName, args.contractAbi, self.contracts, false, args.funABI, value, self, (error, data) => {
+  txFormat.buildData(args.contractName, args.contractAbi, self.contracts, false, args.funABI, value, (error, data) => {
     if (!error) {
       if (isUserAction) {
         if (!args.funABI.constant) {
@@ -162,7 +171,7 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
           self._api.logMessage(`${logMsg}`)
         }
       }
-      txExecution.callFunction(args.address, data, args.funABI, self, (error, txResult) => {
+      self.callFunction(args.address, data, args.funABI, (error, txResult) => {
         if (!error) {
           var isVM = executionContext.isVM()
           if (isVM) {
@@ -185,6 +194,37 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
     }
   }, (msg) => {
     self._api.logMessage(msg)
+  }, (data, runTxCallback) => {
+    // called for libraries deployment
+    self.runTx(data, runTxCallback)
+  })
+}
+
+/**
+  * deploy the given contract
+  *
+  * @param {String} data    - data to send with the transaction ( return of txFormat.buildData(...) ).
+  * @param {Function} callback    - callback.
+  */
+UniversalDApp.prototype.createContract = function (data, callback) {
+  this.runTx({data: data, useCall: false}, (error, txResult) => {
+    // see universaldapp.js line 660 => 700 to check possible values of txResult (error case)
+    callback(error, txResult)
+  })
+}
+
+/**
+  * call the current given contract
+  *
+  * @param {String} to    - address of the contract to call.
+  * @param {String} data    - data to send with the transaction ( return of txFormat.buildData(...) ).
+  * @param {Object} funAbi    - abi definition of the function to call.
+  * @param {Function} callback    - callback.
+  */
+UniversalDApp.prototype.callFunction = function (to, data, funAbi, callback) {
+  this.runTx({to: to, data: data, useCall: funAbi.constant}, (error, txResult) => {
+    // see universaldapp.js line 660 => 700 to check possible values of txResult (error case)
+    callback(error, txResult)
   })
 }
 
@@ -308,7 +348,30 @@ UniversalDApp.prototype.runTx = function (args, cb) {
                 }
               })
         },
-
+        (error, continueTxExecution, cancelCb) => {
+          if (error) {
+            var msg = typeof error !== 'string' ? error.message : error
+            modalDialog('Gas estimation failed', yo`<div>Gas estimation errored with the following message (see below).
+            The transaction execution will likely fail. Do you want to force sending? <br>
+            ${msg}
+            </div>`,
+              {
+                label: 'Send Transaction',
+                fn: () => {
+                  continueTxExecution()
+                }}, {
+                  label: 'Cancel Transaction',
+                  fn: () => {
+                    cancelCb()
+                  }
+                })
+          } else {
+            continueTxExecution()
+          }
+        },
+        function (okCb, cancelCb) {
+          modalCustom.promptPassphrase(null, 'Personal mode is enabled. Please provide passphrase of account ' + tx.from, '', okCb, cancelCb)
+        },
         function (error, result) {
           let eventName = (tx.useCall ? 'callExecuted' : 'transactionExecuted')
           self.event.trigger(eventName, [error, tx.from, tx.to, tx.data, tx.useCall, result, timestamp, payLoad])

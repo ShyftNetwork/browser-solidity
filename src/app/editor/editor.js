@@ -12,7 +12,7 @@ require('brace/ext/language_tools')
 require('brace/ext/searchbox')
 var langTools = ace.acequire('ace/ext/language_tools')
 require('./mode-solidity.js')
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 function setTheme (cb) {
@@ -169,13 +169,36 @@ function Editor (opts = {}) {
     switchSession(path)
   }
 
+  /**
+    * returns the content of the current session
+    *
+    * @return {String} content of the file referenced by @arg path
+    */
+  this.currentContent = function () {
+    return this.get(this.current())
+  }
+
+  /**
+    * returns the content of the session targeted by @arg path
+    * if @arg path is null, the content of the current session is returned
+    *
+    * @return {String} content of the file referenced by @arg path
+    */
   this.get = function (path) {
-    if (currentSession === path) {
+    if (!path || currentSession === path) {
       return editor.getValue()
+    } else if (sessions[path]) {
+      return sessions[path].getValue()
     }
   }
 
-  this.current = function (path) {
+  /**
+    * returns the path of the currently editing file
+    * returns `undefined` if no session is being editer
+    *
+    * @return {String} path of the current session
+    */
+  this.current = function () {
     if (editor.getSession() === emptySession) {
       return
     }

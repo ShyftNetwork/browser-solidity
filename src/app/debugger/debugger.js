@@ -1,8 +1,8 @@
 'use strict'
 
-var remixDebugger = require('@shyftnetwork/shyft_remix-debugger')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var remixCore = require('@shyftnetwork/shyft_remix-core')
+var Ethdebugger = require('./remix-debugger/src/ui/Ethdebugger')
 var executionContext = require('../../execution-context')
 
 /**
@@ -10,7 +10,7 @@ var executionContext = require('../../execution-context')
  */
 function Debugger (id, appAPI, editorEvent) {
   this.el = document.querySelector(id)
-  this.debugger = new remixDebugger.ui.Debugger(
+  this.debugger = new Ethdebugger(
     {
       compilationResult: () => {
         var compilationResult = self.appAPI.lastCompilationResult()

@@ -12,7 +12,7 @@ var executionContext = require('../../execution-context')
 var Dropdown = require('../ui/dropdown')
 
 var csjs = require('csjs-inject')
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = require('./styles/terminal-styles')
@@ -66,6 +66,7 @@ class Terminal {
     self._INDEX.allMain = []
     self._INDEX.commands = {}
     self._INDEX.commandsMain = {}
+    self.registerCommand('html', self._blocksRenderer('html'), { activate: true })
     self.registerCommand('log', self._blocksRenderer('log'), { activate: true })
     self.registerCommand('info', self._blocksRenderer('info'), { activate: true })
     self.registerCommand('error', self._blocksRenderer('error'), { activate: true })
@@ -104,23 +105,40 @@ class Terminal {
         ${self._view.input}
       </div>
     `
-    self._view.icon = yo`<i onmouseenter=${hover} onmouseleave=${hover} onmousedown=${minimize} class="${css.toggleTerminal} fa fa-angle-double-down"></i>`
-    self._view.dragbar = yo`<div onmousedown=${mousedown} class=${css.dragbarHorizontal}></div>`
+    self._view.icon = yo`
+      <i onmouseenter=${hover} onmouseleave=${hover} onmousedown=${minimize}
+      class="${css.toggleTerminal} fa fa-angle-double-down"></i>`
+    self._view.dragbar = yo`
+      <div onmousedown=${mousedown} class=${css.dragbarHorizontal}></div>`
     self._view.dropdown = self._components.dropdown.render()
+    self._view.pendingTxCount = yo`<div class=${css.pendingTx} title='Pending Transactions'>${self._view.pendingTxCount}</div>`
     self._view.bar = yo`
       <div class=${css.bar}>
         ${self._view.dragbar}
         <div class=${css.menu}>
           ${self._view.icon}
           <div class=${css.clear} onclick=${clear}>
-          <i class="fa fa-ban" aria-hidden="true" onmouseenter=${hover} onmouseleave=${hover}></i>
+            <i class="fa fa-ban" aria-hidden="true" title="Clear console"
+            onmouseenter=${hover} onmouseleave=${hover}></i>
+          </div>
+          ${self._view.pendingTxCount}
+          <div class=${css.verticalLine}></div>
+          <div class=${css.listen}>
+            <input onchange=${listenOnNetwork} type="checkbox"
+            title="If checked Remix will listen on all transactions mined in the current environment and not only transactions created by you">
           </div>
           ${self._view.dropdown}
-          <div class=${css.search}><i class="fa fa-search ${css.searchIcon}" aria-hidden="true"></i><input type="text" class=${css.filter} onkeydown=${filter}  placeholder="Search transactions"></div>
-          <div class=${css.listen}><input onchange=${listenOnNetwork} type="checkbox"><label title="If checked Remix will listen on all transactions mined in the current environment and not only transactions created from the GUI">Listen on network</label></div>
+          <div class=${css.search}>
+            <i class="fa fa-search ${css.searchIcon}" aria-hidden="true"></i>
+            <input type="text" class=${css.filter} onkeydown=${filter}  placeholder="Search transactions">
+          </div>
         </div>
       </div>
     `
+    setInterval(() => {
+      updatePendingTxs(self._api, self._view.pendingTxCount)
+    }, 5000)
+
     function listenOnNetwork (ev) {
       self.event.trigger('listenOnNetWork', [ev.currentTarget.checked])
     }
@@ -448,6 +466,11 @@ class Terminal {
     }, 0)
   }
   _blocksRenderer (mode) {
+    if (mode === 'html') {
+      return function logger (args, scopedCommands, append) {
+        if (args.length) append(args[0])
+      }
+    }
     mode = { log: styles.terminal.text_RegularLog, info: styles.terminal.text_InfoLog, error: styles.terminal.text_ErrorLog }[mode] // defaults
     if (mode) {
       return function logger (args, scopedCommands, append) {
@@ -557,5 +580,10 @@ function domTerminalFeatures (self, scopedCommands) {
 }
 
 function blockify (el) { return yo`<div class=${css.block}>${el}</div>` }
+// PENDING TX
+function updatePendingTxs (api, el) {
+  var count = Object.keys(api.udapp().pendingTransactions()).length
+  el.innerText = count
+}
 
 module.exports = Terminal

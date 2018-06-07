@@ -4,6 +4,8 @@ var $ = require('jquery')
 var csjs = require('csjs-inject')
 var yo = require('yo-yo')
 var async = require('async')
+var request = require('request')
+var remixTests = require('remix-tests')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 
@@ -35,7 +37,7 @@ var modalDialogCustom = require('./app/ui/modal-dialog-custom')
 var TxLogger = require('./app/execution/txLogger')
 var Txlistener = remixLib.execution.txListener
 var EventsDecoder = remixLib.execution.EventsDecoder
-var handleImports = require('./app/compiler/compiler-imports')
+var CompilerImport = require('./app/compiler/compiler-imports')
 var FileManager = require('./app/files/fileManager')
 var ContextualListener = require('./app/editor/contextualListener')
 var ContextView = require('./app/editor/contextView')
@@ -43,8 +45,9 @@ var BasicReadOnlyExplorer = require('./app/files/basicReadOnlyExplorer')
 var NotPersistedExplorer = require('./app/files/NotPersistedExplorer')
 var toolTip = require('./app/ui/tooltip')
 var CommandInterpreter = require('./lib/cmdInterpreter')
+var PluginAPI = require('./app/plugin/pluginAPI')
 
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('./app/ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = csjs`
@@ -110,7 +113,7 @@ var css = csjs`
 `
 
 class App {
-  constructor (opts = {}) {
+  constructor (api = {}, events = {}, opts = {}) {
     var self = this
     self._api = {}
     var fileStorage = new Storage('sol:')
@@ -133,6 +136,7 @@ class App {
     self._api.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
     self._view = {}
     self._components = {}
+    self._components.compilerImport = new CompilerImport()
     self.data = {
       _layout: {
         right: {
@@ -224,14 +228,33 @@ This instance of Remix you are visiting WILL NOT BE UPDATED.\n
 Please make a backup of your contracts and start using http://remix.ethereum.org`)
   }
 
+  if (window.location.protocol.indexOf('https') === 0) {
+    toolTip('You are using an `https` connection. Please switch to `http` if you are using Remix against an `http Web3 provider` or allow Mixed Content in your browser.')
+  }
+  // Oops! Accidentally trigger refresh or bookmark.
+  window.onbeforeunload = function () {
+    return 'Are you sure you want to leave?'
+  }
+
+  // Run the compiler instead of trying to save the website
+  $(window).keydown(function (e) {
+    // ctrl+s or command+s
+    if ((e.metaKey || e.ctrlKey) && e.keyCode === 83) {
+      e.preventDefault()
+      runCompiler()
+    }
+  })
+
   function importExternal (url, cb) {
-    handleImports.import(url,
+    self._components.compilerImport.import(url,
       (loadingMsg) => {
         toolTip(loadingMsg)
       },
       (error, content, cleanUrl, type, url) => {
         if (!error) {
-          filesProviders[type].addReadOnly(cleanUrl, content, url)
+          if (filesProviders[type]) {
+            filesProviders[type].addReadOnly(cleanUrl, content, url)
+          }
           cb(null, content)
         } else {
           cb(error)
@@ -239,22 +262,37 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       })
   }
 
-  // ----------------- Compiler -----------------
-  var compiler = new Compiler((url, cb) => {
+  function importFileCb (url, filecb) {
+    if (url.indexOf('/remix_tests.sol') !== -1) {
+      return filecb(null, remixTests.assertLibCode)
+    }
     var provider = fileManager.fileProviderOf(url)
     if (provider) {
       provider.exists(url, (error, exist) => {
-        if (error) return cb(error)
+        if (error) return filecb(error)
         if (exist) {
-          return provider.get(url, cb)
+          return provider.get(url, filecb)
         } else {
-          importExternal(url, cb)
+          importExternal(url, filecb)
         }
       })
+    } else if (self._components.compilerImport.isRelativeImport(url)) {
+      // try to resolve localhost modules (aka truffle imports)
+      var splitted = /([^/]+)\/(.*)$/g.exec(url)
+      async.tryEach([
+        (cb) => { importFileCb('localhost/installed_contracts/' + url, cb) },
+        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/installed_contracts/' + splitted[1] + '/contracts/' + splitted[2], cb) } },
+        (cb) => { importFileCb('localhost/node_modules/' + url, cb) },
+        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/node_modules/' + splitted[1] + '/contracts/' + splitted[2], cb) } }],
+        (error, result) => { filecb(error, result) }
+      )
     } else {
-      importExternal(url, cb)
+      importExternal(url, filecb)
     }
-  })
+  }
+
+  // ----------------- Compiler -----------------
+  var compiler = new Compiler(importFileCb)
   var offsetToLineColumnConverter = new OffsetToLineColumnConverter(compiler.event)
 
   // ----------------- UniversalDApp -----------------
@@ -292,6 +330,9 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     api: {
       logMessage: (msg) => {
         self._components.editorpanel.log({ type: 'log', value: msg })
+      },
+      logHtmlMessage: (msg) => {
+        self._components.editorpanel.log({ type: 'html', value: msg })
       },
       config: self._api.config,
       detectNetwork: (cb) => {
@@ -510,7 +551,8 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       editor: self._components.editor,
       config: self._api.config,
       txListener: txlistener,
-      contextview: self._components.contextView
+      contextview: self._components.contextView,
+      udapp: () => { return udapp }
     }
   })
   this._components.editorpanel.event.register('resize', direction => self._adjustLayout(direction))
@@ -539,11 +581,12 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
   var fileManager = new FileManager({
     config: config,
     editor: editor,
-    filesProviders: filesProviders
+    filesProviders: filesProviders,
+    compilerImport: self._components.compilerImport
   })
 
   // Add files received from remote instance (i.e. another remix-ide)
-  function loadFiles (filesSet, fileProvider) {
+  function loadFiles (filesSet, fileProvider, callback) {
     if (!fileProvider) fileProvider = 'browser'
 
     async.each(Object.keys(filesSet), (file, callback) => {
@@ -560,6 +603,7 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       })
     }, (error) => {
       if (!error) fileManager.switchFile()
+      if (callback) callback(error)
     })
   }
 
@@ -576,19 +620,17 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
   // ------------------ gist load ----------------
   function loadFromGist (gistId) {
     return gistHandler.handleLoad(gistId, function (gistId) {
-      $.ajax({
-        url: 'https://api.github.com/gists/' + gistId,
-        jsonp: 'callback',
-        dataType: 'jsonp',
-        success: function (response) {
-          if (response.data) {
-            if (!response.data.files) {
-              modalDialogCustom.alert('Gist load error: ' + response.data.message)
-              return
-            }
-            loadFiles(response.data.files, 'gist')
-          }
+      request.get({
+        url: `https://api.github.com/gists/${gistId}`,
+        json: true
+      }, (error, response, data = {}) => {
+        if (error || !data.files) {
+          modalDialogCustom.alert(`Gist load error: ${error || data.message}`)
+          return
         }
+        loadFiles(data.files, 'gist', (errorLoadingFile) => {
+          if (!errorLoadingFile) filesProviders['gist'].id = gistId
+        })
       })
     })
   }
@@ -602,6 +644,8 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       if (Object.keys(filesList).length === 0) {
         if (!filesProviders['browser'].set(examples.ballot.name, examples.ballot.content)) {
           modalDialogCustom.alert('Failed to store example contract in browser. Remix will not work properly. Please ensure Remix has access to LocalStorage. Safari in Private mode is known not to work.')
+        } else {
+          filesProviders['browser'].set(examples.ballot_test.name, examples.ballot_test.content)
         }
       }
     })
@@ -685,39 +729,18 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
   // ---------------- Righthand-panel --------------------
 
   var rhpAPI = {
-    config: config,
+    importFileCb: importFileCb,
+    filesFromPath: (path, cb) => {
+      fileManager.filesFromPath(path, cb)
+    },
+    newAccount: (pass, cb) => {
+      udapp.newAccount(pass, cb)
+    },
     setEditorSize (delta) {
       $('#righthand-panel').css('width', delta)
       self._view.centerpanel.style.right = delta + 'px'
       document.querySelector(`.${css.dragbar2}`).style.right = delta + 'px'
       onResize()
-    },
-    getAccounts: (cb) => {
-      udapp.getAccounts(cb)
-    },
-    getSource: (fileName) => {
-      return compiler.getSource(fileName)
-    },
-    editorContent: () => {
-      return editor.get(editor.current())
-    },
-    currentFile: () => {
-      return config.get('currentFile')
-    },
-    getContracts: () => {
-      return compiler.getContracts()
-    },
-    getContract: (name) => {
-      return compiler.getContract(name)
-    },
-    visitContracts: (cb) => {
-      compiler.visitContracts(cb)
-    },
-    udapp: () => {
-      return udapp
-    },
-    udappUI: () => {
-      return udappUI
     },
     switchFile: function (path) {
       fileManager.switchFile(path)
@@ -741,9 +764,6 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
         }
       })
     },
-    compilationMessage: (message, container, options) => {
-      renderer.error(message, container, options)
-    },
     currentCompiledSourceCode: () => {
       if (compiler.lastCompilationResult.source) {
         return compiler.lastCompilationResult.source.sources[compiler.lastCompilationResult.source.target]
@@ -758,31 +778,11 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       compiler.setOptimize(optimize)
       if (runCompilation) runCompiler()
     },
-    loadCompiler: (usingWorker, url) => {
-      compiler.loadVersion(usingWorker, url)
-    },
     runCompiler: () => {
       runCompiler()
     },
     logMessage: (msg) => {
       self._components.editorpanel.log({type: 'log', value: msg})
-    },
-    getCompilationResult: () => {
-      return compiler.lastCompilationResult
-    },
-    newAccount: (pass, cb) => {
-      udapp.newAccount(pass, cb)
-    },
-    setConfig: (mod, path, content, cb) => {
-      self._api.filesProviders['config'].set(mod + '/' + path, content)
-      cb()
-    },
-    getConfig: (mod, path, cb) => {
-      cb(null, self._api.filesProviders['config'].get(mod + '/' + path))
-    },
-    removeConfig: (mod, path, cb) => {
-      cb(null, self._api.filesProviders['config'].remove(mod + '/' + path))
-      if (cb) cb()
     }
   }
   var rhpEvents = {
@@ -792,7 +792,17 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     editor: editor.event,
     staticAnalysis: staticanalysis.event
   }
-  self._components.righthandpanel = new RighthandPanel(rhpAPI, rhpEvents, {})
+  var rhpOpts = {
+    pluginAPI: new PluginAPI(self, compiler),
+    udapp: udapp,
+    udappUI: udappUI,
+    compiler: compiler,
+    renderer: renderer,
+    editor: editor,
+    config: config
+  }
+
+  self._components.righthandpanel = new RighthandPanel(rhpAPI, rhpEvents, rhpOpts)
   self._view.rightpanel.appendChild(self._components.righthandpanel.render())
   self._components.righthandpanel.init()
   self._components.righthandpanel.event.register('resize', delta => self._adjustLayout('right', delta))
@@ -914,7 +924,9 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       return
     }
     var input = editor.get(currentFile)
-
+    if (!input) {
+      return
+    }
     // if there's no change, don't do anything
     if (input === previousInput) {
       return

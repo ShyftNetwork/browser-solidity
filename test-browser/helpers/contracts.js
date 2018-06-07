@@ -42,8 +42,8 @@ function getCompiledContracts (browser, compiled, callback) {
 
 function createContract (browser, inputParams, callback) {
   browser.click('.runView')
-  .setValue('input.create', inputParams, function () {
-    browser.click('#runTabView div[class^="create"]').perform(function () { callback() })
+  .setValue('div[class^="contractActionsContainerSingle"] input', inputParams, function () {
+    browser.click('#runTabView button[class^="instanceButton"]').pause(500).perform(function () { callback() })
   })
 }
 
@@ -100,7 +100,7 @@ function clickFunction (fnFullName, expectedInput) {
 
 function verifyCallReturnValue (browser, address, checks, done) {
   browser.execute(function (address) {
-    var nodes = document.querySelectorAll('#instance' + address + ' div[class^="contractProperty"] div[class^="value"]')
+    var nodes = document.querySelectorAll('#instance' + address + ' div[class^="contractActionsContainer"] div[class^="value"]')
     var ret = []
     for (var k = 0; k < nodes.length; k++) {
       var text = nodes[k].innerText ? nodes[k].innerText : nodes[k].textContent
@@ -132,16 +132,28 @@ function testFunction (fnFullName, txHash, log, expectedInput, expectedReturn, e
     .pause(500)
     .waitForElementPresent('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"]')
     .assert.containsText('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] span', log)
-    .click('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] button[class^="details"]')
+    .click('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] div[class^="log"]')
     .perform(function (client, done) {
       if (expectedReturn) {
-        client.assert.containsText('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] table[class^="txTable"] #decodedoutput', expectedReturn)
+        client.getText('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] table[class^="txTable"] #decodedoutput', (result) => {
+          console.log(result)
+          var equal = deepequal(JSON.parse(result.value), JSON.parse(expectedReturn))
+          if (!equal) {
+            client.assert.fail('expected ' + expectedReturn + ' got ' + result.value, 'info about error', '')
+          }
+        })
       }
       done()
     })
     .perform(function (client, done) {
       if (expectedEvent) {
-        client.assert.containsText('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] table[class^="txTable"] #logs', expectedEvent)
+        client.getText('#editor-container div[class^="terminal"] span[id="tx' + txHash + '"] table[class^="txTable"] #logs', (result) => {
+          console.log(result)
+          var equal = deepequal(JSON.parse(result.value), JSON.parse(expectedEvent))
+          if (!equal) {
+            client.assert.fail('expected ' + expectedEvent + ' got ' + result.value, 'info about error', '')
+          }
+        })
       }
       done()
       if (callback) callback()
@@ -161,16 +173,19 @@ function setEditorValue (value, callback) {
   return this
 }
 
-function addInstance (browser, address, callback) {
-  browser.setValue('.ataddressinput', address, function () {
+function addInstance (browser, address, isValidFormat, isValidChecksum, callback) {
+  browser.clearValue('.ataddressinput').setValue('.ataddressinput', address, function () {
     browser.click('div[class^="atAddress"]')
-      .perform((client, done) => {
-        browser.execute(function () {
-          document.querySelector('#modal-footer-ok').click()
-        }, [], function (result) {
-          done()
-        })
-      }).perform(() => {
+      .execute(function () {
+        var ret = document.querySelector('div[class^="modalBody"] div').innerHTML
+        document.querySelector('#modal-footer-ok').click()
+        return ret
+      }, [], function (result) {
+        if (!isValidFormat) {
+          browser.assert.equal(result.value, 'Invalid address.')
+        } else if (!isValidChecksum) {
+          browser.assert.equal(result.value, 'Invalid checksum address.')
+        }
         callback()
       })
   })

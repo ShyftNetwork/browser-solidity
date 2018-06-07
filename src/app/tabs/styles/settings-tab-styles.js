@@ -1,6 +1,5 @@
 var csjs = require('csjs-inject')
-var remixLib = require('@shyftnetwork/shyft_remix-lib')
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = csjs`
@@ -73,6 +72,9 @@ var css = csjs`
   .remixdinstallation {
     padding: 3px;
     border-radius: 2px;
+    margin-left: 5px;
+  }
+  .savegisttoken {
     margin-left: 5px;
   }
 }

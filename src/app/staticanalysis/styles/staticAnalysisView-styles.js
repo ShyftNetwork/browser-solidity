@@ -1,7 +1,6 @@
-var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var csjs = require('csjs-inject')
 
-var styleGuide = remixLib.ui.themeChooser
+var styleGuide = require('../../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 
 var css = csjs`

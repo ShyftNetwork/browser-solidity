@@ -9,6 +9,7 @@ var remixTests = require('remix-tests')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 
+var registry = require('./global/registry')
 var UniversalDApp = require('./universal-dapp.js')
 var UniversalDAppUI = require('./universal-dapp-ui.js')
 var Remixd = require('./lib/remixd')
@@ -23,12 +24,9 @@ var BrowserfilesTree = require('./app/files/browser-files-tree')
 var chromeCloudStorageSync = require('./app/files/chromeCloudStorageSync')
 var SharedFolder = require('./app/files/shared-folder')
 var Config = require('./config')
-var Editor = require('./app/editor/editor')
 var Renderer = require('./app/ui/renderer')
 var Compiler = require('@shyftnetwork/shyft_remix-solidity').Compiler
 var executionContext = require('./execution-context')
-var Debugger = require('./app/debugger/debugger')
-var StaticAnalysis = require('./app/staticanalysis/staticAnalysisView')
 var FilePanel = require('./app/panels/file-panel')
 var EditorPanel = require('./app/panels/editor-panel')
 var RighthandPanel = require('./app/panels/righthand-panel')
@@ -39,13 +37,10 @@ var Txlistener = remixLib.execution.txListener
 var EventsDecoder = remixLib.execution.EventsDecoder
 var CompilerImport = require('./app/compiler/compiler-imports')
 var FileManager = require('./app/files/fileManager')
-var ContextualListener = require('./app/editor/contextualListener')
-var ContextView = require('./app/editor/contextView')
 var BasicReadOnlyExplorer = require('./app/files/basicReadOnlyExplorer')
 var NotPersistedExplorer = require('./app/files/NotPersistedExplorer')
 var toolTip = require('./app/ui/tooltip')
-var CommandInterpreter = require('./lib/cmdInterpreter')
-var PluginAPI = require('./app/plugin/pluginAPI')
+var TransactionReceiptResolver = require('./transactionReceiptResolver')
 
 var styleGuide = require('./app/ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
@@ -115,36 +110,61 @@ var css = csjs`
 class App {
   constructor (api = {}, events = {}, opts = {}) {
     var self = this
-    self._api = {}
+    this.event = new EventManager()
+    self._components = {}
+    registry.put({api: self, name: 'app'})
+
     var fileStorage = new Storage('sol:')
+    registry.put({api: fileStorage, name: 'fileStorage'})
+
     var configStorage = new Storage('config:')
-    self._api.config = new Config(fileStorage)
-    executionContext.init(self._api.config)
+    registry.put({api: configStorage, name: 'configStorage'})
+
+    self._components.config = new Config(fileStorage)
+    registry.put({api: self._components.config, name: 'config'})
+
+    executionContext.init(self._components.config)
     executionContext.listenOnLastBlock()
-    self._api.filesProviders = {}
-    self._api.filesProviders['browser'] = new Browserfiles(fileStorage)
-    self._api.filesProviders['config'] = new BrowserfilesTree('config', configStorage)
-    self._api.filesProviders['config'].init()
+
+    self._components.compilerImport = new CompilerImport()
+    registry.put({api: self._components.compilerImport, name: 'compilerimport'})
+    self._components.gistHandler = new GistHandler()
+
+    self._components.filesProviders = {}
+    self._components.filesProviders['browser'] = new Browserfiles(fileStorage)
+    self._components.filesProviders['config'] = new BrowserfilesTree('config', configStorage)
+    self._components.filesProviders['config'].init()
+    registry.put({api: self._components.filesProviders['browser'], name: 'fileproviders/browser'})
+    registry.put({api: self._components.filesProviders['config'], name: 'fileproviders/config'})
+
     var remixd = new Remixd()
+    registry.put({api: remixd, name: 'remixd'})
     remixd.event.register('system', (message) => {
       if (message.error) toolTip(message.error)
     })
-    self._api.filesProviders['localhost'] = new SharedFolder(remixd)
-    self._api.filesProviders['swarm'] = new BasicReadOnlyExplorer('swarm')
-    self._api.filesProviders['github'] = new BasicReadOnlyExplorer('github')
-    self._api.filesProviders['gist'] = new NotPersistedExplorer('gist')
-    self._api.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
+
+    self._components.filesProviders['localhost'] = new SharedFolder(remixd)
+    self._components.filesProviders['swarm'] = new BasicReadOnlyExplorer('swarm')
+    self._components.filesProviders['github'] = new BasicReadOnlyExplorer('github')
+    self._components.filesProviders['gist'] = new NotPersistedExplorer('gist')
+    self._components.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
+    registry.put({api: self._components.filesProviders['localhost'], name: 'fileproviders/localhost'})
+    registry.put({api: self._components.filesProviders['swarm'], name: 'fileproviders/swarm'})
+    registry.put({api: self._components.filesProviders['github'], name: 'fileproviders/github'})
+    registry.put({api: self._components.filesProviders['gist'], name: 'fileproviders/gist'})
+    registry.put({api: self._components.filesProviders['ipfs'], name: 'fileproviders/ipfs'})
+    registry.put({api: self._components.filesProviders, name: 'fileproviders'})
+
     self._view = {}
-    self._components = {}
-    self._components.compilerImport = new CompilerImport()
+
     self.data = {
       _layout: {
         right: {
-          offset: self._api.config.get('right-offset') || 400,
+          offset: self._components.config.get('right-offset') || 400,
           show: true
         }, // @TODO: adapt sizes proportionally to browser window size
         left: {
-          offset: self._api.config.get('left-offset') || 200,
+          offset: self._components.config.get('left-offset') || 200,
           show: true
         }
       }
@@ -159,7 +179,7 @@ class App {
         if (layout.show) delta = layout.offset
         else delta = 0
       } else {
-        self._api.config.set(`${direction}-offset`, delta)
+        self._components.config.set(`${direction}-offset`, delta)
         layout.offset = delta
       }
     }
@@ -206,6 +226,123 @@ class App {
     self._adjustLayout('right', self.data._layout.right.offset)
     return self._view.el
   }
+  runCompiler () {
+    const self = this
+    if (self._components.righthandpanel.debugger().isActive) return
+
+    self._components.fileManager.saveCurrentFile()
+    self._components.editorpanel.getEditor().clearAnnotations()
+    var currentFile = self._components.config.get('currentFile')
+    if (currentFile) {
+      if (/.(.sol)$/.exec(currentFile)) {
+        // only compile *.sol file.
+        var target = currentFile
+        var sources = {}
+        var provider = self._components.fileManager.fileProviderOf(currentFile)
+        if (provider) {
+          provider.get(target, (error, content) => {
+            if (error) {
+              console.log(error)
+            } else {
+              sources[target] = { content }
+              self._components.compiler.compile(sources, target)
+            }
+          })
+        } else {
+          console.log('cannot compile ' + currentFile + '. Does not belong to any explorer')
+        }
+      }
+    }
+  }
+  startdebugging (txHash) {
+    const self = this
+    self.event.trigger('debuggingRequested', [])
+    self._components.righthandpanel.debugger().debug(txHash)
+  }
+  loadFromGist (params) {
+    const self = this
+    return self._components.gistHandler.handleLoad(params, function (gistId) {
+      request.get({
+        url: `https://api.github.com/gists/${gistId}`,
+        json: true
+      }, (error, response, data = {}) => {
+        if (error || !data.files) {
+          modalDialogCustom.alert(`Gist load error: ${error || data.message}`)
+          return
+        }
+        self.loadFiles(data.files, 'gist', (errorLoadingFile) => {
+          if (!errorLoadingFile) self._components.filesProviders['gist'].id = gistId
+        })
+      })
+    })
+  }
+  loadFiles (filesSet, fileProvider, callback) {
+    const self = this
+    if (!fileProvider) fileProvider = 'browser'
+
+    async.each(Object.keys(filesSet), (file, callback) => {
+      helper.createNonClashingName(file, self._components.filesProviders[fileProvider],
+      (error, name) => {
+        if (error) {
+          modalDialogCustom.alert('Unexpected error loading the file ' + error)
+        } else if (helper.checkSpecialChars(name)) {
+          modalDialogCustom.alert('Special characters are not allowed')
+        } else {
+          self._components.filesProviders[fileProvider].set(name, filesSet[file].content)
+        }
+        callback()
+      })
+    }, (error) => {
+      if (!error) self._components.fileManager.switchFile()
+      if (callback) callback(error)
+    })
+  }
+  importExternal (url, cb) {
+    const self = this
+    self._components.compilerImport.import(url,
+      (loadingMsg) => {
+        toolTip(loadingMsg)
+      },
+      (error, content, cleanUrl, type, url) => {
+        if (!error) {
+          if (self._components.filesProviders[type]) {
+            self._components.filesProviders[type].addReadOnly(cleanUrl, content, url)
+          }
+          cb(null, content)
+        } else {
+          cb(error)
+        }
+      })
+  }
+  importFileCb (url, filecb) {
+    const self = this
+    if (url.indexOf('/remix_tests.sol') !== -1) {
+      return filecb(null, remixTests.assertLibCode)
+    }
+    var provider = self._components.fileManager.fileProviderOf(url)
+    if (provider) {
+      provider.exists(url, (error, exist) => {
+        if (error) return filecb(error)
+        if (exist) {
+          return provider.get(url, filecb)
+        } else {
+          self.importExternal(url, filecb)
+        }
+      })
+    } else if (self._components.compilerImport.isRelativeImport(url)) {
+      // try to resolve localhost modules (aka truffle imports)
+      var splitted = /([^/]+)\/(.*)$/g.exec(url)
+      async.tryEach([
+        (cb) => { self.importFileCb('localhost/installed_contracts/' + url, cb) },
+        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { self.importFileCb('localhost/installed_contracts/' + splitted[1] + '/contracts/' + splitted[2], cb) } },
+        (cb) => { self.importFileCb('localhost/node_modules/' + url, cb) },
+        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { self.importFileCb('localhost/node_modules/' + splitted[1] + '/contracts/' + splitted[2], cb) } }],
+        (error, result) => { filecb(error, result) }
+      )
+    } else {
+      self.importExternal(url, filecb)
+    }
+  }
 }
 
 module.exports = App
@@ -216,7 +353,7 @@ function run () {
   if (window.location.hostname === 'yann300.github.io') {
     modalDialogCustom.alert('This UNSTABLE ALPHA branch of Remix has been moved to http://ethereum.github.io/remix-live-alpha.')
   } else if (window.location.hostname === 'remix-alpha.ethereum.org' ||
-  (window.location.hostname === 'https://shyftnetwork.github.io' && window.location.pathname.indexOf('/remix-live-alpha') === 0)) {
+  (window.location.hostname === 'ethereum.github.io' && window.location.pathname.indexOf('/remix-live-alpha') === 0)) {
     modalDialogCustom.alert(`This instance of the Remix IDE is an UNSTABLE ALPHA branch.\n
 Please only use it if you know what you are doing, otherwise visit the stable version at http://remix.ethereum.org.`)
   } else if (window.location.protocol.indexOf('http') === 0 &&
@@ -241,145 +378,40 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     // ctrl+s or command+s
     if ((e.metaKey || e.ctrlKey) && e.keyCode === 83) {
       e.preventDefault()
-      runCompiler()
+      self.runCompiler()
     }
   })
 
-  function importExternal (url, cb) {
-    self._components.compilerImport.import(url,
-      (loadingMsg) => {
-        toolTip(loadingMsg)
-      },
-      (error, content, cleanUrl, type, url) => {
-        if (!error) {
-          if (filesProviders[type]) {
-            filesProviders[type].addReadOnly(cleanUrl, content, url)
-          }
-          cb(null, content)
-        } else {
-          cb(error)
-        }
-      })
-  }
-
-  function importFileCb (url, filecb) {
-    if (url.indexOf('/remix_tests.sol') !== -1) {
-      return filecb(null, remixTests.assertLibCode)
-    }
-    var provider = fileManager.fileProviderOf(url)
-    if (provider) {
-      provider.exists(url, (error, exist) => {
-        if (error) return filecb(error)
-        if (exist) {
-          return provider.get(url, filecb)
-        } else {
-          importExternal(url, filecb)
-        }
-      })
-    } else if (self._components.compilerImport.isRelativeImport(url)) {
-      // try to resolve localhost modules (aka truffle imports)
-      var splitted = /([^/]+)\/(.*)$/g.exec(url)
-      async.tryEach([
-        (cb) => { importFileCb('localhost/installed_contracts/' + url, cb) },
-        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/installed_contracts/' + splitted[1] + '/contracts/' + splitted[2], cb) } },
-        (cb) => { importFileCb('localhost/node_modules/' + url, cb) },
-        (cb) => { if (!splitted) { cb('url not parseable' + url) } else { importFileCb('localhost/node_modules/' + splitted[1] + '/contracts/' + splitted[2], cb) } }],
-        (error, result) => { filecb(error, result) }
-      )
-    } else {
-      importExternal(url, filecb)
-    }
-  }
+  registry.put({api: msg => self._components.editorpanel.logHtmlMessage(msg), name: 'logCallback'})
 
   // ----------------- Compiler -----------------
-  var compiler = new Compiler(importFileCb)
-  var offsetToLineColumnConverter = new OffsetToLineColumnConverter(compiler.event)
+  self._components.compiler = new Compiler((url, cb) => self.importFileCb(url, cb))
+  registry.put({api: self._components.compiler, name: 'compiler'})
+
+  var offsetToLineColumnConverter = new OffsetToLineColumnConverter(self._components.compiler.event)
+  registry.put({api: offsetToLineColumnConverter, name: 'offsettolinecolumnconverter'})
 
   // ----------------- UniversalDApp -----------------
-  var transactionContextAPI = {
-    getAddress: (cb) => {
-      cb(null, $('#txorigin').val())
-    },
-    getValue: (cb) => {
-      try {
-        var number = document.querySelector('#value').value
-        var select = document.getElementById('unit')
-        var index = select.selectedIndex
-        var selectedUnit = select.querySelectorAll('option')[index].dataset.unit
-        var unit = 'ether' // default
-        if (selectedUnit === 'ether') {
-          unit = 'ether'
-        } else if (selectedUnit === 'finney') {
-          unit = 'finney'
-        } else if (selectedUnit === 'gwei') {
-          unit = 'gwei'
-        } else if (selectedUnit === 'wei') {
-          unit = 'wei'
-        }
-        cb(null, executionContext.web3().toWei(number, unit))
-      } catch (e) {
-        cb(e)
-      }
-    },
-    getGasLimit: (cb) => {
-      cb(null, $('#gasLimit').val())
-    }
-  }
-
   var udapp = new UniversalDApp({
-    api: {
-      logMessage: (msg) => {
-        self._components.editorpanel.log({ type: 'log', value: msg })
-      },
-      logHtmlMessage: (msg) => {
-        self._components.editorpanel.log({ type: 'html', value: msg })
-      },
-      config: self._api.config,
-      detectNetwork: (cb) => {
-        executionContext.detectNetwork(cb)
-      },
-      personalMode: () => {
-        return self._api.config.get('settings/personal-mode')
-      }
-    },
-    opt: { removable: false, removable_instances: true }
+    removable: false,
+    removable_instances: true
   })
+  registry.put({api: udapp, name: 'udapp'})
 
   var udappUI = new UniversalDAppUI(udapp)
-
-  udapp.reset({}, transactionContextAPI)
-  udappUI.reset()
-  udapp.event.register('debugRequested', this, function (txResult) {
-    startdebugging(txResult.transactionHash)
-  })
+  registry.put({api: udappUI, name: 'udappUI'})
 
   // ----------------- Tx listener -----------------
-  var transactionReceiptResolver = {
-    _transactionReceipts: {},
-    resolve: function (tx, cb) {
-      if (this._transactionReceipts[tx.hash]) {
-        return cb(null, this._transactionReceipts[tx.hash])
-      }
-      executionContext.web3().eth.getTransactionReceipt(tx.hash, (error, receipt) => {
-        if (!error) {
-          this._transactionReceipts[tx.hash] = receipt
-          cb(null, receipt)
-        } else {
-          cb(error)
-        }
-      })
-    }
-  }
+  var transactionReceiptResolver = new TransactionReceiptResolver()
 
-  var compiledContracts = function () {
-    if (compiler.lastCompilationResult && compiler.lastCompilationResult.data) {
-      return compiler.lastCompilationResult.data.contracts
-    }
-    return null
-  }
   var txlistener = new Txlistener({
     api: {
-      contracts: compiledContracts,
+      contracts: function () {
+        if (self._components.compiler.lastCompilationResult && self._components.compiler.lastCompilationResult.data) {
+          return self._components.compiler.lastCompilationResult.data.contracts
+        }
+        return null
+      },
       resolveReceipt: function (tx, cb) {
         transactionReceiptResolver.resolve(tx, cb)
       }
@@ -387,6 +419,7 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     event: {
       udapp: udapp.event
     }})
+  registry.put({api: txlistener, name: 'txlistener'})
 
   var eventsDecoder = new EventsDecoder({
     api: {
@@ -395,172 +428,26 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
       }
     }
   })
+  registry.put({api: eventsDecoder, name: 'eventsdecoder'})
 
   txlistener.startListening()
 
-  // ----------------- Command Interpreter -----------------
-  /*
-    this module basically listen on user input (from terminal && editor)
-    and interpret them as commands
-  */
-  var cmdInterpreter = new CommandInterpreter()
-  cmdInterpreter.event.register('debug', (hash, cb) => {
-    startdebugging(hash)
-    if (cb) cb()
-  })
-  cmdInterpreter.event.register('loadgist', (id, cb) => {
-    loadFromGist({gist: id})
-    if (cb) cb()
-  })
-  cmdInterpreter.event.register('loadurl', (url, cb) => {
-    importExternal(url, (err, content) => {
-      if (err) {
-        toolTip(`Unable to load ${url} from swarm: ${err}`)
-        if (cb) cb(err)
-      } else {
-        try {
-          content = JSON.parse(content)
-          async.eachOfSeries(content.sources, (value, file, callbackSource) => {
-            var url = value.urls[0] // @TODO retrieve all other contents ?
-            importExternal(url, (error, content) => {
-              if (error) {
-                toolTip(`Cannot retrieve the content of ${url}: ${error}`)
-              }
-              callbackSource()
-            })
-          }, (error) => {
-            if (cb) cb(error)
-          })
-        } catch (e) {}
-        if (cb) cb()
-      }
-    })
-  })
-  cmdInterpreter.event.register('setproviderurl', (url, cb) => {
-    executionContext.setProviderFromEndpoint(url, 'web3', (error) => {
-      if (error) toolTip(error)
-      if (cb) cb()
-    })
-  })
-  cmdInterpreter.event.register('batch', (url, cb) => {
-    var content = editor.get(editor.current())
-    if (!content) {
-      toolTip('no content to execute')
-      if (cb) cb()
-      return
-    }
-    var split = content.split('\n')
-    async.eachSeries(split, (value, cb) => {
-      if (!cmdInterpreter.interpret(value, (error) => {
-        error ? cb(`Cannot run ${value}. stopping`) : cb()
-      })) {
-        cb(`Cannot interpret ${value}. stopping`)
-      }
-    }, (error) => {
-      if (error) toolTip(error)
-      if (cb) cb()
-    })
-  })
-
-  // ----------------- editor ----------------------------
-  this._components.editor = new Editor({}) // @TODO: put into editorpanel
-  var editor = self._components.editor // shortcut for the editor
-
-  // ---------------- ContextualListener -----------------------
-  this._components.contextualListener = new ContextualListener({
-    getCursorPosition: () => {
-      return this._components.editor.getCursorPosition()
-    },
-    getCompilationResult: () => {
-      return compiler.lastCompilationResult
-    },
-    getCurrentFile: () => {
-      return config.get('currentFile')
-    },
-    getSourceName: (index) => {
-      return compiler.getSourceName(index)
-    },
-    highlight: (position, node) => {
-      if (compiler.lastCompilationResult && compiler.lastCompilationResult.data) {
-        var lineColumn = offsetToLineColumnConverter.offsetToLineColumn(position, position.file, compiler.lastCompilationResult)
-        var css = 'highlightreference'
-        if (node.children && node.children.length) {
-          // If node has children, highlight the entire line. if not, just highlight the current source position of the node.
-          css = 'highlightreference'
-          lineColumn = {
-            start: {
-              line: lineColumn.start.line,
-              column: 0
-            },
-            end: {
-              line: lineColumn.start.line + 1,
-              column: 0
-            }
-          }
-        }
-        var fileName = compiler.getSourceName(position.file)
-        if (fileName) {
-          return editor.addMarker(lineColumn, fileName, css)
-        }
-      }
-      return null
-    },
-    stopHighlighting: (event) => {
-      editor.removeMarker(event.eventId, event.fileTarget)
-    }
-  }, {
-    compiler: compiler.event,
-    editor: editor.event
-  })
-
-  // ---------------- ContextView -----------------------
-  this._components.contextView = new ContextView({
-    contextualListener: this._components.contextualListener,
-    jumpTo: (position) => {
-      function jumpToLine (lineColumn) {
-        if (lineColumn.start && lineColumn.start.line && lineColumn.start.column) {
-          editor.gotoLine(lineColumn.start.line, lineColumn.end.column + 1)
-        }
-      }
-      if (compiler.lastCompilationResult && compiler.lastCompilationResult.data) {
-        var lineColumn = offsetToLineColumnConverter.offsetToLineColumn(position, position.file, compiler.lastCompilationResult)
-        var filename = compiler.getSourceName(position.file)
-        // TODO: refactor with rendererAPI.errorClick
-        if (filename !== config.get('currentFile')) {
-          var provider = fileManager.fileProviderOf(filename)
-          if (provider) {
-            provider.exists(filename, (error, exist) => {
-              if (error) return console.log(error)
-              fileManager.switchFile(filename)
-              jumpToLine(lineColumn)
-            })
-          }
-        } else {
-          jumpToLine(lineColumn)
-        }
-      }
-    }
-  }, {
-    contextualListener: this._components.contextualListener.event
-  })
+  // TODO: There are still a lot of dep between editorpanel and filemanager
 
   // ----------------- editor panel ----------------------
-  this._components.editorpanel = new EditorPanel({
-    api: {
-      cmdInterpreter: cmdInterpreter,
-      editor: self._components.editor,
-      config: self._api.config,
-      txListener: txlistener,
-      contextview: self._components.contextView,
-      udapp: () => { return udapp }
-    }
-  })
-  this._components.editorpanel.event.register('resize', direction => self._adjustLayout(direction))
+  self._components.editorpanel = new EditorPanel()
+  registry.put({ api: self._components.editorpanel, name: 'editorpanel' })
 
-  this._view.centerpanel.appendChild(this._components.editorpanel.render())
+  // ----------------- file manager ----------------------------
+  self._components.fileManager = new FileManager()
+  var fileManager = self._components.fileManager
+  registry.put({api: fileManager, name: 'filemanager'})
 
-  var queryParams = new QueryParams()
-  var gistHandler = new GistHandler()
+  self._components.editorpanel.init()
+  self._components.fileManager.init()
+
+  self._components.editorpanel.event.register('resize', direction => self._adjustLayout(direction))
+  self._view.centerpanel.appendChild(self._components.editorpanel.render())
 
   // The event listener needs to be registered as early as possible, because the
   // parent will send the message upon the "load" event.
@@ -573,391 +460,47 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     }
   }, false)
 
-  this.event = new EventManager()
-
-  var config = self._api.config
-  var filesProviders = self._api.filesProviders
-
-  var fileManager = new FileManager({
-    config: config,
-    editor: editor,
-    filesProviders: filesProviders,
-    compilerImport: self._components.compilerImport
-  })
-
-  // Add files received from remote instance (i.e. another remix-ide)
-  function loadFiles (filesSet, fileProvider, callback) {
-    if (!fileProvider) fileProvider = 'browser'
-
-    async.each(Object.keys(filesSet), (file, callback) => {
-      helper.createNonClashingName(file, filesProviders[fileProvider],
-      (error, name) => {
-        if (error) {
-          modalDialogCustom.alert('Unexpected error loading the file ' + error)
-        } else if (helper.checkSpecialChars(name)) {
-          modalDialogCustom.alert('Special characters are not allowed')
-        } else {
-          filesProviders[fileProvider].set(name, filesSet[file].content)
-        }
-        callback()
-      })
-    }, (error) => {
-      if (!error) fileManager.switchFile()
-      if (callback) callback(error)
-    })
-  }
-
   // Replace early callback with instant response
   loadFilesCallback = function (files) {
-    loadFiles(files)
+    self.loadFiles(files)
   }
 
   // Run if we did receive an event from remote instance while starting up
   if (filesToLoad !== null) {
-    loadFiles(filesToLoad)
+    self.loadFiles(filesToLoad)
   }
-
-  // ------------------ gist load ----------------
-  function loadFromGist (gistId) {
-    return gistHandler.handleLoad(gistId, function (gistId) {
-      request.get({
-        url: `https://api.github.com/gists/${gistId}`,
-        json: true
-      }, (error, response, data = {}) => {
-        if (error || !data.files) {
-          modalDialogCustom.alert(`Gist load error: ${error || data.message}`)
-          return
-        }
-        loadFiles(data.files, 'gist', (errorLoadingFile) => {
-          if (!errorLoadingFile) filesProviders['gist'].id = gistId
-        })
-      })
-    })
-  }
-
-  var loadingFromGist = loadFromGist(queryParams.get())
-
-  // insert ballot contract if there are no files available
-  if (!loadingFromGist) {
-    filesProviders['browser'].resolveDirectory('browser', (error, filesList) => {
-      if (error) console.error(error)
-      if (Object.keys(filesList).length === 0) {
-        if (!filesProviders['browser'].set(examples.ballot.name, examples.ballot.content)) {
-          modalDialogCustom.alert('Failed to store example contract in browser. Remix will not work properly. Please ensure Remix has access to LocalStorage. Safari in Private mode is known not to work.')
-        } else {
-          filesProviders['browser'].set(examples.ballot_test.name, examples.ballot_test.content)
-        }
-      }
-    })
-  }
-
-  window.syncStorage = chromeCloudStorageSync
-  chromeCloudStorageSync()
 
   // ---------------- FilePanel --------------------
-  var FilePanelAPI = {
-    switchFile: function (path) {
-      fileManager.switchFile(path)
-    },
-    event: fileManager.event,
-    config: config,
-    currentContent: function () {
-      return editor.get(config.get('currentFile'))
-    },
-    setText: function (text) {
-      editor.setText(text)
-    }
-  }
-  var filePanel = new FilePanel(FilePanelAPI, filesProviders)
-
-  // TODO this should happen inside file-panel.js
-  var filepanelContainer = document.querySelector('#filepanel')
-  filepanelContainer.appendChild(filePanel.render())
-
-  filePanel.event.register('resize', delta => self._adjustLayout('left', delta))
-
-  var previouslyOpenedFile = config.get('currentFile')
-  if (previouslyOpenedFile) {
-    filesProviders['browser'].get(previouslyOpenedFile, (error, content) => {
-      if (!error && content) {
-        fileManager.switchFile(previouslyOpenedFile)
-      } else {
-        fileManager.switchFile()
-      }
-    })
-  } else {
-    fileManager.switchFile()
-  }
+  self._components.filePanel = new FilePanel()
+  self._view.leftpanel.appendChild(self._components.filePanel.render())
+  self._components.filePanel.event.register('resize', delta => self._adjustLayout('left', delta))
 
   // ----------------- Renderer -----------------
-  var rendererAPI = {
-    error: (file, error) => {
-      if (file === config.get('currentFile')) {
-        editor.addAnnotation(error)
-      }
-    },
-    errorClick: (errFile, errLine, errCol) => {
-      if (errFile !== config.get('currentFile')) {
-        // TODO: refactor with this._components.contextView.jumpTo
-        var provider = fileManager.fileProviderOf(errFile)
-        if (provider) {
-          provider.exists(errFile, (error, exist) => {
-            if (error) return console.log(error)
-            fileManager.switchFile(errFile)
-            editor.gotoLine(errLine, errCol)
-          })
-        }
-      } else {
-        editor.gotoLine(errLine, errCol)
-      }
-    }
-  }
-  var renderer = new Renderer(rendererAPI)
-
-  // ----------------- StaticAnalysis -----------------
-
-  var staticAnalysisAPI = {
-    renderWarning: (label, warningContainer, type) => {
-      return renderer.error(label, warningContainer, type)
-    },
-    offsetToLineColumn: (location, file) => {
-      return offsetToLineColumnConverter.offsetToLineColumn(location, file, compiler.lastCompilationResult)
-    }
-  }
-  var staticanalysis = new StaticAnalysis(staticAnalysisAPI, compiler.event)
+  var renderer = new Renderer()
+  registry.put({api: renderer, name: 'renderer'})
 
   // ---------------- Righthand-panel --------------------
-
-  var rhpAPI = {
-    importFileCb: importFileCb,
-    filesFromPath: (path, cb) => {
-      fileManager.filesFromPath(path, cb)
-    },
-    newAccount: (pass, cb) => {
-      udapp.newAccount(pass, cb)
-    },
-    setEditorSize (delta) {
-      $('#righthand-panel').css('width', delta)
-      self._view.centerpanel.style.right = delta + 'px'
-      document.querySelector(`.${css.dragbar2}`).style.right = delta + 'px'
-      onResize()
-    },
-    switchFile: function (path) {
-      fileManager.switchFile(path)
-    },
-    filesProviders: filesProviders,
-    fileProviderOf: (path) => {
-      return fileManager.fileProviderOf(path)
-    },
-    fileProvider: (name) => {
-      return self._api.filesProviders[name]
-    },
-    currentPath: function () {
-      return fileManager.currentPath()
-    },
-    getBalance: (address, callback) => {
-      udapp.getBalance(address, (error, balance) => {
-        if (error) {
-          callback(error)
-        } else {
-          callback(null, executionContext.web3().fromWei(balance, 'ether'))
-        }
-      })
-    },
-    currentCompiledSourceCode: () => {
-      if (compiler.lastCompilationResult.source) {
-        return compiler.lastCompilationResult.source.sources[compiler.lastCompilationResult.source.target]
-      }
-      return ''
-    },
-    resetDapp: (contracts) => {
-      udapp.reset(contracts, transactionContextAPI)
-      udappUI.reset()
-    },
-    setOptimize: (optimize, runCompilation) => {
-      compiler.setOptimize(optimize)
-      if (runCompilation) runCompiler()
-    },
-    runCompiler: () => {
-      runCompiler()
-    },
-    logMessage: (msg) => {
-      self._components.editorpanel.log({type: 'log', value: msg})
-    }
-  }
-  var rhpEvents = {
-    compiler: compiler.event,
-    app: self.event,
-    udapp: udapp.event,
-    editor: editor.event,
-    staticAnalysis: staticanalysis.event
-  }
-  var rhpOpts = {
-    pluginAPI: new PluginAPI(self, compiler),
-    udapp: udapp,
-    udappUI: udappUI,
-    compiler: compiler,
-    renderer: renderer,
-    editor: editor,
-    config: config
-  }
-
-  self._components.righthandpanel = new RighthandPanel(rhpAPI, rhpEvents, rhpOpts)
+  self._components.righthandpanel = new RighthandPanel()
   self._view.rightpanel.appendChild(self._components.righthandpanel.render())
   self._components.righthandpanel.init()
   self._components.righthandpanel.event.register('resize', delta => self._adjustLayout('right', delta))
 
-  var node = document.getElementById('staticanalysisView')
-  node.insertBefore(staticanalysis.render(), node.childNodes[0])
-
-  // ----------------- editor resize ---------------
-
-  function onResize () {
-    editor.resize(document.querySelector('#editorWrap').checked)
-  }
-  onResize()
-
-  self._view.el.addEventListener('change', onResize)
-  document.querySelector('#editorWrap').addEventListener('change', onResize)
-
-  // ----------------- Debugger -----------------
-  var debugAPI = {
-    statementMarker: null,
-    fullLineMarker: null,
-    source: null,
-    currentSourceLocation: (lineColumnPos, location) => {
-      if (this.statementMarker) editor.removeMarker(this.statementMarker, this.source)
-      if (this.fullLineMarker) editor.removeMarker(this.fullLineMarker, this.source)
-      this.statementMarker = null
-      this.fullLineMarker = null
-      this.source = null
-      if (lineColumnPos) {
-        this.source = compiler.getSourceName(location.file)
-        if (config.get('currentFile') !== this.source) {
-          fileManager.switchFile(this.source)
-        }
-        this.statementMarker = editor.addMarker(lineColumnPos, this.source, css.highlightcode)
-        editor.scrollToLine(lineColumnPos.start.line, true, true, function () {})
-        if (lineColumnPos.start.line === lineColumnPos.end.line) {
-          this.fullLineMarker = editor.addMarker({
-            start: {
-              line: lineColumnPos.start.line,
-              column: 0
-            },
-            end: {
-              line: lineColumnPos.start.line + 1,
-              column: 0
-            }
-          }, this.source, css.highlightcode_fullLine)
-        }
-      }
-    },
-    lastCompilationResult: () => {
-      return compiler.lastCompilationResult
-    },
-    offsetToLineColumn: (location, file) => {
-      return offsetToLineColumnConverter.offsetToLineColumn(location, file, compiler.lastCompilationResult)
-    }
-  }
-  var transactionDebugger = new Debugger('#debugger', debugAPI, editor.event)
-  transactionDebugger.addProvider('vm', executionContext.vm())
-  transactionDebugger.addProvider('injected', executionContext.internalWeb3())
-  transactionDebugger.addProvider('web3', executionContext.internalWeb3())
-  transactionDebugger.switchProvider(executionContext.getProvider())
-
-  var txLogger = new TxLogger({
-    api: {
-      editorpanel: self._components.editorpanel,
-      resolvedTransaction: function (hash) {
-        return txlistener.resolvedTransaction(hash)
-      },
-      parseLogs: function (tx, contractName, contracts, cb) {
-        eventsDecoder.parseLogs(tx, contractName, contracts, cb)
-      },
-      compiledContracts: function () {
-        return compiledContracts()
-      }
-    },
-    events: {
-      txListener: txlistener.event
-    }
-  })
-
-  txLogger.event.register('debugRequested', (hash) => {
-    startdebugging(hash)
-  })
-
-  function runCompiler () {
-    if (transactionDebugger.isActive) return
-
-    fileManager.saveCurrentFile()
-    editor.clearAnnotations()
-    var currentFile = config.get('currentFile')
-    if (currentFile) {
-      if (/.(.sol)$/.exec(currentFile)) {
-        // only compile *.sol file.
-        var target = currentFile
-        var sources = {}
-        var provider = fileManager.fileProviderOf(currentFile)
-        if (provider) {
-          provider.get(target, (error, content) => {
-            if (error) {
-              console.log(error)
-            } else {
-              sources[target] = { content }
-              compiler.compile(sources, target)
-            }
-          })
-        } else {
-          console.log('cannot compile ' + currentFile + '. Does not belong to any explorer')
-        }
-      }
-    }
-  }
-
-  var previousInput = ''
-  var saveTimeout = null
-
-  function editorOnChange () {
-    var currentFile = config.get('currentFile')
-    if (!currentFile) {
-      return
-    }
-    var input = editor.get(currentFile)
-    if (!input) {
-      return
-    }
-    // if there's no change, don't do anything
-    if (input === previousInput) {
-      return
-    }
-    previousInput = input
-
-    // fire storage update
-    // NOTE: save at most once per 5 seconds
-    if (saveTimeout) {
-      window.clearTimeout(saveTimeout)
-    }
-    saveTimeout = window.setTimeout(() => {
-      fileManager.saveCurrentFile()
-    }, 5000)
-  }
-
-  editor.event.register('contentChanged', editorOnChange)
-  // in order to save the file when switching
-  editor.event.register('sessionSwitched', editorOnChange)
+  var txLogger = new TxLogger() // eslint-disable-line  
 
   executionContext.event.register('contextChanged', this, function (context) {
-    runCompiler()
+    self.runCompiler()
   })
 
+  // rerun the compiler when the environement changed
   executionContext.event.register('web3EndpointChanged', this, function (context) {
-    runCompiler()
+    self.runCompiler()
   })
 
-  compiler.event.register('compilerLoaded', this, function (version) {
-    previousInput = ''
-    runCompiler()
+  var queryParams = new QueryParams()
+
+  // check init query parameters from the URL once the compiler is loaded
+  self._components.compiler.event.register('compilerLoaded', this, function (version) {
+    self.runCompiler()
 
     if (queryParams.get().context) {
       let context = queryParams.get().context
@@ -979,12 +522,48 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
     }
 
     if (queryParams.get().debugtx) {
-      startdebugging(queryParams.get().debugtx)
+      self.startdebugging(queryParams.get().debugtx)
+    }
+
+    if (queryParams.get().pluginurl) {
+      var title = queryParams.get().plugintitle
+      var url = queryParams.get().pluginurl
+      modalDialogCustom.confirm(null, `Remix is going to load the extension "${title}" located at ${queryParams.get().pluginurl}. Are you sure to load this external extension?`, () => {
+        self._components.righthandpanel.loadPlugin({title, url})
+      })
     }
   })
 
-  function startdebugging (txHash) {
-    self.event.trigger('debuggingRequested', [])
-    transactionDebugger.debug(txHash)
+  // chrome app
+  window.syncStorage = chromeCloudStorageSync
+  chromeCloudStorageSync()
+
+  var loadingFromGist = self.loadFromGist(queryParams.get())
+  if (!loadingFromGist) {
+    // insert ballot contract if there are no files to show
+    self._components.filesProviders['browser'].resolveDirectory('browser', (error, filesList) => {
+      if (error) console.error(error)
+      if (Object.keys(filesList).length === 0) {
+        if (!self._components.filesProviders['browser'].set(examples.ballot.name, examples.ballot.content)) {
+          modalDialogCustom.alert('Failed to store example contract in browser. Remix will not work properly. Please ensure Remix has access to LocalStorage. Safari in Private mode is known not to work.')
+        } else {
+          self._components.filesProviders['browser'].set(examples.ballot_test.name, examples.ballot_test.content)
+        }
+      }
+    })
+  }
+
+  // Open last opened file
+  var previouslyOpenedFile = self._components.config.get('currentFile')
+  if (previouslyOpenedFile) {
+    self._components.filesProviders['browser'].get(previouslyOpenedFile, (error, content) => {
+      if (!error && content) {
+        fileManager.switchFile(previouslyOpenedFile)
+      } else {
+        fileManager.switchFile()
+      }
+    })
+  } else {
+    fileManager.switchFile()
   }
 }

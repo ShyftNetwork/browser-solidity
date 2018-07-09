@@ -15,32 +15,47 @@ var txHelper = remixLib.execution.txHelper
 var executionContext = require('./execution-context')
 var modalCustom = require('./app/ui/modal-dialog-custom')
 var uiUtil = require('./app/ui/util')
+var globalRegistry = require('./global/registry')
 
 var modalDialog = require('./app/ui/modaldialog')
 var typeConversion = remixLib.execution.typeConversion
 var confirmDialog = require('./app/execution/confirmDialog')
 
-/*
-  trigger debugRequested
-*/
-function UniversalDApp (opts = {}) {
+function UniversalDApp (opts, localRegistry) {
   this.event = new EventManager()
   var self = this
-
-  self._api = opts.api
-  self.removable = opts.opt.removable
-  self.removable_instances = opts.opt.removable_instances
+  self.data = {}
+  self._components = {}
+  self._components.registry = localRegistry || globalRegistry
+  self.removable = opts.removable
+  self.removable_instances = opts.removable_instances
+  self._deps = {
+    config: self._components.registry.get('config').api,
+    compiler: self._components.registry.get('compiler').api,
+    logCallback: self._components.registry.get('logCallback').api
+  }
   executionContext.event.register('contextChanged', this, function (context) {
-    self.reset(self.contracts)
+    self.resetEnvironment()
   })
-  self.txRunner = new TxRunner({}, opts.api)
+  self._txRunnerAPI = {
+    config: self._deps.config,
+    detectNetwork: (cb) => {
+      executionContext.detectNetwork(cb)
+    },
+    personalMode: () => {
+      return self._deps.config.get('settings/personal-mode')
+    }
+  }
+  self.txRunner = new TxRunner({}, self._txRunnerAPI)
+  self.data.contractsDetails = {}
+  self._deps.compiler.event.register('compilationFinished', (success, data, source) => {
+    self.data.contractsDetails = success && data ? data.contracts : {}
+  })
+  self.accounts = {}
+  self.resetEnvironment()
 }
 
-UniversalDApp.prototype.reset = function (contracts, transactionContextAPI) {
-  this.contracts = contracts
-  if (transactionContextAPI) {
-    this.transactionContextAPI = transactionContextAPI
-  }
+UniversalDApp.prototype.resetEnvironment = function () {
   this.accounts = {}
   if (executionContext.isVM()) {
     this._addAccount('3cd7232cd6f3fc66a57a6bedc1a8ed6c228fff0a327e169c2bcc5e869ed49511', '0x56BC75E2D63100000')
@@ -50,20 +65,30 @@ UniversalDApp.prototype.reset = function (contracts, transactionContextAPI) {
     this._addAccount('71975fbf7fe448e004ac7ae54cad0a383c3906055a65468714156a07385e96ce', '0x56BC75E2D63100000')
     executionContext.vm().stateManager.cache.flush(function () {})
   }
-  this.txRunner = new TxRunner(this.accounts, this._api)
+  this.txRunner = new TxRunner(this.accounts, this._txRunnerAPI)
   this.txRunner.event.register('transactionBroadcasted', (txhash) => {
-    this._api.detectNetwork((error, network) => {
+    executionContext.detectNetwork((error, network) => {
       if (!error && network) {
         var txLink = executionContext.txDetailsLink(network.name, txhash)
-        if (txLink) this._api.logHtmlMessage(yo`<a href="${txLink}" target="_blank">${txLink}</a>`)
+        if (txLink) this._deps.logCallback(yo`<a href="${txLink}" target="_blank">${txLink}</a>`)
       }
     })
   })
 }
 
+UniversalDApp.prototype.resetAPI = function (transactionContextAPI) {
+  this.transactionContextAPI = transactionContextAPI
+}
+
+UniversalDApp.prototype.createVMAccount = function (privateKey, balance, cb) {
+  this._addAccount(privateKey, balance)
+  privateKey = new Buffer(privateKey, 'hex')
+  cb(null, '0x' + ethJSUtil.privateToAddress(privateKey).toString('hex'))
+}
+
 UniversalDApp.prototype.newAccount = function (password, cb) {
   if (!executionContext.isVM()) {
-    if (!this._api.personalMode()) {
+    if (!this._deps.config.get('settings/personal-mode')) {
       return cb('Not running in personal mode')
     }
     modalCustom.promptPassphraseCreation((error, passphrase) => {
@@ -106,7 +131,7 @@ UniversalDApp.prototype.getAccounts = function (cb) {
   if (!executionContext.isVM()) {
     // Weirdness of web3: listAccounts() is sync, `getListAccounts()` is async
     // See: https://github.com/ethereum/web3.js/issues/442
-    if (this._api.personalMode()) {
+    if (this._deps.config.get('settings/personal-mode')) {
       executionContext.web3().personal.getListAccounts(cb)
     } else {
       executionContext.web3().eth.getAccounts(cb)
@@ -148,8 +173,23 @@ UniversalDApp.prototype.getBalance = function (address, cb) {
   }
 }
 
+UniversalDApp.prototype.getBalanceInEther = function (address, callback) {
+  var self = this
+  self.getBalance(address, (error, balance) => {
+    if (error) {
+      callback(error)
+    } else {
+      callback(null, executionContext.web3().fromWei(balance, 'ether'))
+    }
+  })
+}
+
 UniversalDApp.prototype.pendingTransactions = function () {
   return this.txRunner.pendingTxs
+}
+
+UniversalDApp.prototype.pendingTransactionsCount = function () {
+  return Object.keys(this.txRunner.pendingTxs).length
 }
 
 UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, outputCb) {
@@ -162,13 +202,14 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
       logMsg = `call to ${args.contractName}.${(args.funABI.name) ? args.funABI.name : '(fallback)'}`
     }
   }
-  txFormat.buildData(args.contractName, args.contractAbi, self.contracts, false, args.funABI, value, (error, data) => {
+  // contractsDetails is used to resolve libraries
+  txFormat.buildData(args.contractName, args.contractAbi, self.data.contractsDetails, false, args.funABI, value, (error, data) => {
     if (!error) {
       if (isUserAction) {
         if (!args.funABI.constant) {
-          self._api.logMessage(`${logMsg} pending ... `)
+          self._deps.logCallback(`${logMsg} pending ... `)
         } else {
-          self._api.logMessage(`${logMsg}`)
+          self._deps.logCallback(`${logMsg}`)
         }
       }
       self.callFunction(args.address, data, args.funABI, (error, txResult) => {
@@ -177,7 +218,7 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
           if (isVM) {
             var vmError = txExecution.checkVMError(txResult)
             if (vmError.error) {
-              self._api.logMessage(`${logMsg} errored: ${vmError.message} `)
+              self._deps.logCallback(`${logMsg} errored: ${vmError.message} `)
               return
             }
           }
@@ -186,14 +227,14 @@ UniversalDApp.prototype.call = function (isUserAction, args, value, lookupOnly, 
             outputCb(decoded)
           }
         } else {
-          self._api.logMessage(`${logMsg} errored: ${error} `)
+          self._deps.logCallback(`${logMsg} errored: ${error} `)
         }
       })
     } else {
-      self._api.logMessage(`${logMsg} errored: ${error} `)
+      self._deps.logCallback(`${logMsg} errored: ${error} `)
     }
   }, (msg) => {
-    self._api.logMessage(msg)
+    self._deps.logCallback(msg)
   }, (data, runTxCallback) => {
     // called for libraries deployment
     self.runTx(data, runTxCallback)
@@ -245,6 +286,23 @@ UniversalDApp.prototype.getInputs = function (funABI) {
     return ''
   }
   return txHelper.inputParametersDeclarationToString(funABI.inputs)
+}
+
+/**
+ * This function send a tx without alerting the user (if mainnet or if gas estimation too high).
+ * SHOULD BE TAKEN CAREFULLY!
+ *
+ * @param {Object} tx    - transaction.
+ * @param {Function} callback    - callback.
+ */
+UniversalDApp.prototype.silentRunTx = function (tx, cb) {
+  if (!executionContext.isVM()) return cb('Cannot silently send transaction through a web3 provider')
+  this.txRunner.rawRun(
+  tx,
+  (network, tx, gasEstimation, continueTxExecution, cancelCb) => { continueTxExecution() },
+  (error, continueTxExecution, cancelCb) => { if (error) { cb(error) } else { continueTxExecution() } },
+  (okCb, cancelCb) => { okCb() },
+  cb)
 }
 
 UniversalDApp.prototype.runTx = function (args, cb) {

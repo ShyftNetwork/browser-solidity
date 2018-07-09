@@ -2,20 +2,23 @@ var yo = require('yo-yo')
 var csjs = require('csjs-inject')
 var remixLib = require('remix-lib')
 
+var globalRegistry = require('../../global/registry')
 var helper = require('../../lib/helper')
 var styles = require('../ui/styles-guide/theme-chooser').chooser()
 
 var EventManager = remixLib.EventManager
 
 module.exports = class TabbedMenu {
-  constructor (api = {}, events = {}, opts = {}) {
+  constructor (localRegistry) {
     const self = this
     self.event = new EventManager()
-    self._opts = opts
-    self._api = api
-    self._events = events
+    self._components = {}
+    self._components.registry = localRegistry || globalRegistry
+    self._deps = {
+      app: self._components.registry.get('app').api
+    }
     self._view = { el: null, viewport: null, tabs: {}, contents: {} }
-    events.app.register('debuggingRequested', () => {
+    self._deps.app.event.register('debuggingRequested', () => {
       self.selectTabByTitle('Debugger')
     })
   }
@@ -43,13 +46,35 @@ module.exports = class TabbedMenu {
     if (self._view.el) self._view.el.appendChild(self._view.tabs[title])
     if (self._view.viewport) self._view.viewport.appendChild(self._view.contents[title])
   }
+  removeTabByTitle (title) {
+    const self = this
+    if (self._view.tabs[title]) {
+      self._view.tabs[title].parentNode.removeChild(self._view.tabs[title])
+    }
+    if (self._view.contents[title]) {
+      self._view.contents[title].parentNode.removeChild(self._view.contents[title])
+    }
+    delete self._view.contents[title]
+    delete self._view.tabs[title]
+  }
+  getTabByClass (tabClass) {
+    const self = this
+    return self._view.el.querySelector(`li.${tabClass}`)
+  }
+  updateTabTitle (tabClass, title) {
+    const self = this
+    var tab = self.getTabByClass(tabClass)
+    if (tab) tab.innerHTML = title
+  }
   selectTabByTitle (title) {
     const self = this
     self.selectTab(self._view.tabs[title])
   }
   selectTabByClassName (tabClass) {
     const self = this
-    self.selectTab(self._view.el.querySelector(`li.${tabClass}`))
+    var tab = self.getTabByClass(tabClass)
+    if (tab) self.selectTab(tab)
+    return tab
   }
   selectTab (el) {
     const self = this
@@ -63,12 +88,19 @@ module.exports = class TabbedMenu {
     var title = el.getAttribute('title')
     self._view.contents[el.getAttribute('title')].style.display = 'block'
     el.classList.add(css.active)
-    self._events.app.trigger('tabChanged', [title])
+    self._deps.app.event.trigger('tabChanged', [title])
   }
 }
 
 const css = csjs`
-  li.active {
+  .menu {
+    display: flex;
+    background-color: ${styles.rightPanel.BackgroundColor_Pre};
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .active {
     background-color: ${styles.rightPanel.backgroundColor_Tab};
     color: ${styles.appProperties.mainText_Color}
   }
@@ -81,21 +113,19 @@ const css = csjs`
     font-size: 1em;
     text-align: center;
   }
-  .opts {
-    display: flex;
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .optionViews {
+    background-color: ${styles.rightPanel.backgroundColor_Tab};
+    overflow: scroll;
+    height: 100%;
   }
-  .opts_li {
-    display: block;
-    font-weight: bold;
-    color: ${styles.rightPanel.text_Teriary}
+  .optionViews > div {
+    display: none;
   }
-  .opts_li.active {
-    color: ${styles.rightPanel.text_Primary}
-  }
-  .opts_li:hover {
-    color: ${styles.rightPanel.icon_HoverColor_TogglePanel}
+  .optionViews .pre {
+    word-wrap: break-word;
+    background-color: ${styles.rightPanel.BackgroundColor_Pre};
+    border-radius: 3px;
+    display: inline-block;
+    padding: 0 0.6em;
   }
 `

@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@shyftnetwork/shyft_remix-ide",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Minimalistic browser-based Solidity IDE",
   "devDependencies": {
     "@shyftnetwork/shyft_ethereumjs-block": "^1.7.1",

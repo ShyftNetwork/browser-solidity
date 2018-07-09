@@ -3,6 +3,8 @@ var yo = require('yo-yo')
 var csjs = require('csjs-inject')
 var minixhr = require('minixhr')
 var remixLib = require('remix-lib')
+
+var globalRegistry = require('../../global/registry')
 var QueryParams = require('../../lib/query-params')
 var helper = require('../../lib/helper')
 var modal = require('../ui/modal-dialog-custom')
@@ -15,12 +17,18 @@ var Storage = remixLib.Storage
 var EventManager = remixLib.EventManager
 
 module.exports = class SettingsTab {
-  constructor (api = {}, events = {}, opts = {}) {
+  constructor (localRegistry) {
     const self = this
-    self._opts = opts
-    self._api = api
-    self._events = events
     self._components = {}
+    self._components.registry = localRegistry || globalRegistry
+    // dependencies
+    self._deps = {
+      compiler: self._components.registry.get('compiler').api,
+      config: self._components.registry.get('config').api,
+      editorPanel: self._components.registry.get('editorpanel').api,
+      editor: self._components.registry.get('editor').api,
+      righthandpanel: self._components.registry.get('righthandpanel').api
+    }
     self._view = { /* eslint-disable */
       el: null,
       optionVM: null, personal: null, optimize: null, warnPersonalMode: null,
@@ -41,9 +49,10 @@ module.exports = class SettingsTab {
     self._components.themeStorage = new Storage('style:')
     self.data.optimize = !!self._components.queryParams.get().optimize
     self._components.queryParams.update({ optimize: self.data.optimize })
-    self._api.setOptimize(self.data.optimize, false)
+    self._deps.compiler.setOptimize(self.data.optimize)
     self.data.currentTheme = self._components.themeStorage.get('theme') || 'light'
-    self._events.compiler.register('compilerLoaded', (version) => self.setVersionText(version))
+
+    self._deps.compiler.event.register('compilerLoaded', (version) => self.setVersionText(version))
     self.fetchAllVersion((allversions, selectedVersion) => {
       self.data.allversions = allversions
       self.data.selectedVersion = selectedVersion
@@ -56,16 +65,16 @@ module.exports = class SettingsTab {
 
     // Gist settings
     var gistAccessToken = yo`<input id="gistaccesstoken" type="password">`
-    var token = self._opts.config.get('settings/gist-access-token')
+    var token = self._deps.config.get('settings/gist-access-token')
     if (token) gistAccessToken.value = token
-    var gistAddToken = yo`<input class="${css.savegisttoken}" id="savegisttoken" onclick=${() => { self._opts.config.set('settings/gist-access-token', gistAccessToken.value); tooltip('Access token saved') }} value="Save" type="button">`
-    var gistRemoveToken = yo`<input id="removegisttoken" onclick=${() => { gistAccessToken.value = ''; self._opts.config.set('settings/gist-access-token', ''); tooltip('Access token removed') }} value="Remove" type="button">`
-    self._view.gistToken = yo`<div class="${css.checkboxText}">${gistAccessToken}${copyToClipboard(() => self._opts.config.get('settings/gist-access-token'))}${gistAddToken}${gistRemoveToken}</div>`
+    var gistAddToken = yo`<input class="${css.savegisttoken}" id="savegisttoken" onclick=${() => { self._deps.config.set('settings/gist-access-token', gistAccessToken.value); tooltip('Access token saved') }} value="Save" type="button">`
+    var gistRemoveToken = yo`<input id="removegisttoken" onclick=${() => { gistAccessToken.value = ''; self._deps.config.set('settings/gist-access-token', ''); tooltip('Access token removed') }} value="Remove" type="button">`
+    self._view.gistToken = yo`<div class="${css.checkboxText}">${gistAccessToken}${copyToClipboard(() => self._deps.config.get('settings/gist-access-token'))}${gistAddToken}${gistRemoveToken}</div>`
     //
     self._view.optionVM = yo`<input onchange=${onchangeOption} id="alwaysUseVM" type="checkbox">`
-    if (self._opts.config.get('settings/always-use-vm')) self._view.optionVM.setAttribute('checked', '')
+    if (self._deps.config.get('settings/always-use-vm')) self._view.optionVM.setAttribute('checked', '')
     self._view.personal = yo`<input onchange=${onchangePersonal} id="personal" type="checkbox">`
-    if (self._opts.config.get('settings/personal-mode')) self._view.personal.setAttribute('checked', '')
+    if (self._deps.config.get('settings/personal-mode')) self._view.personal.setAttribute('checked', '')
     self._view.optimize = yo`<input onchange=${onchangeOptimize} id="optimize" type="checkbox">`
     if (self.data.optimize) self._view.optimize.setAttribute('checked', '')
     var warnText = `Transaction sent over Web3 will use the web3.personal API - be sure the endpoint is opened before enabling it.
@@ -100,7 +109,7 @@ module.exports = class SettingsTab {
             <span class="${css.checkboxText}">Always use Ethereum VM at Load</span>
           </div>
           <div class="${css.crow}">
-            <div><input id="editorWrap" type="checkbox"></div>
+            <div><input id="editorWrap" type="checkbox" onchange=${function () { self._deps.editor.resize(this.checked) }}></div>
             <span class="${css.checkboxText}">Text Wrap</span>
           </div>
           <div class="${css.crow}">
@@ -141,13 +150,11 @@ module.exports = class SettingsTab {
       <div class="${css.info}">
         <div class=${css.title}>Plugin</div>
         <div class="${css.crowNoFlex}">
-          <div class=${css.attention}>
-            <i title="Do not use this feature yet" class="${css.icon} fa fa-exclamation-triangle" aria-hidden="true"></i>
-            <span> Do not use this alpha feature if you are not sure what you are doing!</span>
-          </div>
+          <div><input onclick=${() => { onLoadPlugin('oraclize') }} type="button" value="Oraclize" class="${css.pluginLoad}"></div>
+          <div><input onclick=${() => { onLoadPlugin('etherscan-general') }} type="button" value="Etherscan-general" class="${css.pluginLoad}"></div>
           <div>
             ${self._view.pluginInput}
-            <input onclick=${onloadPlugin} type="button" value="Load" class="${css.pluginLoad}">
+            <input onclick=${onloadPluginJson} type="button" value="Load" class="${css.pluginLoad}">
           </div>
         </div>
       </div>`
@@ -187,16 +194,20 @@ module.exports = class SettingsTab {
         ${self._view.config.localremixd}
       </div>`
     function onchangeOption (event) {
-      self._opts.config.set('settings/always-use-vm', !self._opts.config.get('settings/always-use-vm'))
+      self._deps.config.set('settings/always-use-vm', !self._deps.config.get('settings/always-use-vm'))
     }
-    function onloadPlugin (event) {
+    function onLoadPlugin (name) {
+      // @TODO: BAD! REFACTOR: no module should trigger events of another modules emitter
+      self._deps.righthandpanel.event.trigger('plugin-name-loadRequest', [name])
+    }
+    function onloadPluginJson (event) {
       try {
         var json = JSON.parse(self._view.pluginInput.value)
       } catch (e) {
         return modal.alert('cannot parse the plugin definition to JSON')
       }
       // @TODO: BAD! REFACTOR: no module should trigger events of another modules emitter
-      self._events.rhp.trigger('plugin-loadRequest', [json])
+      self._deps.righthandpanel.event.trigger('plugin-loadRequest', [json])
     }
     function onswitch2darkTheme (event) {
       styleGuide.switchTheme('dark')
@@ -209,14 +220,15 @@ module.exports = class SettingsTab {
     function onchangeOptimize (event) {
       self.data.optimize = !!self._view.optimize.checked
       self._components.queryParams.update({ optimize: self.data.optimize })
-      self._api.setOptimize(self.data.optimize, true)
+      self._deps.compiler.setOptimize(self.data.optimize)
+      self._deps.app.runCompiler()
     }
     function onchangeLoadVersion (event) {
       self.data.selectedVersion = self._view.versionSelector.value
       self._updateVersionSelector()
     }
     function onchangePersonal (event) {
-      self._opts.config.set('settings/personal-mode', !self._opts.config.get('settings/personal-mode'))
+      self._deps.config.set('settings/personal-mode', !self._deps.config.get('settings/personal-mode'))
     }
     return self._view.el
   }
@@ -250,10 +262,10 @@ module.exports = class SettingsTab {
       // Workers cannot load js on "file:"-URLs and we get a
       // "Uncaught RangeError: Maximum call stack size exceeded" error on Chromium,
       // resort to non-worker version in that case.
-      self._opts.compiler.loadVersion(true, url)
+      self._deps.compiler.loadVersion(true, url)
       self.setVersionText('(loading using worker)')
     } else {
-      self._opts.compiler.loadVersion(false, url)
+      self._deps.compiler.loadVersion(false, url)
       self.setVersionText('(loading)')
     }
   }

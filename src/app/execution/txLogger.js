@@ -13,6 +13,7 @@ var helper = require('../../lib/helper')
 var executionContext = require('../../execution-context')
 var modalDialog = require('../ui/modal-dialog-custom')
 var typeConversion = remixLib.execution.typeConversion
+var globlalRegistry = require('../../global/registry')
 
 var css = csjs`
   .log {
@@ -119,13 +120,11 @@ var css = csjs`
   }`
 /**
   * This just export a function that register to `newTransaction` and forward them to the logger.
-  * Emit debugRequested
   *
   */
 class TxLogger {
-  constructor (opts = {}) {
+  constructor (localRegistry) {
     this.event = new EventManager()
-    this.opts = opts
     this.seen = {}
     function filterTx (value, query) {
       if (value.length) {
@@ -134,7 +133,18 @@ class TxLogger {
       return false
     }
 
-    this.logKnownTX = opts.api.editorpanel.registerCommand('knownTransaction', (args, cmds, append) => {
+    this._components = {}
+    this._components.registry = localRegistry || globlalRegistry
+    // dependencies
+    this._deps = {
+      editorPanel: this._components.registry.get('editorpanel').api,
+      txListener: this._components.registry.get('txlistener').api,
+      eventsDecoder: this._components.registry.get('eventsdecoder').api,
+      compiler: this._components.registry.get('compiler').api,
+      app: this._components.registry.get('app').api
+    }
+
+    this.logKnownTX = this._deps.editorPanel.registerCommand('knownTransaction', (args, cmds, append) => {
       var data = args[0]
       var el
       if (data.tx.isCall) {
@@ -146,46 +156,46 @@ class TxLogger {
       append(el)
     }, { activate: true, filterFn: filterTx })
 
-    this.logUnknownTX = opts.api.editorpanel.registerCommand('unknownTransaction', (args, cmds, append) => {
+    this.logUnknownTX = this._deps.editorPanel.registerCommand('unknownTransaction', (args, cmds, append) => {
       var data = args[0]
       var el = renderUnknownTransaction(this, data)
       append(el)
     }, { activate: false, filterFn: filterTx })
 
-    this.logEmptyBlock = opts.api.editorpanel.registerCommand('emptyBlock', (args, cmds, append) => {
+    this.logEmptyBlock = this._deps.editorPanel.registerCommand('emptyBlock', (args, cmds, append) => {
       var data = args[0]
       var el = renderEmptyBlock(this, data)
       append(el)
     }, { activate: true })
 
-    opts.api.editorpanel.event.register('terminalFilterChanged', (type, label) => {
+    this._deps.editorPanel.event.register('terminalFilterChanged', (type, label) => {
       if (type === 'deselect') {
         if (label === 'only remix transactions') {
-          opts.api.editorpanel.updateTerminalFilter({ type: 'select', value: 'unknownTransaction' })
+          this._deps.editorPanel.updateTerminalFilter({ type: 'select', value: 'unknownTransaction' })
         } else if (label === 'all transactions') {
-          opts.api.editorpanel.updateTerminalFilter({ type: 'deselect', value: 'unknownTransaction' })
+          this._deps.editorPanel.updateTerminalFilter({ type: 'deselect', value: 'unknownTransaction' })
         }
       } else if (type === 'select') {
         if (label === 'only remix transactions') {
-          opts.api.editorpanel.updateTerminalFilter({ type: 'deselect', value: 'unknownTransaction' })
+          this._deps.editorPanel.updateTerminalFilter({ type: 'deselect', value: 'unknownTransaction' })
         } else if (label === 'all transactions') {
-          opts.api.editorpanel.updateTerminalFilter({ type: 'select', value: 'unknownTransaction' })
+          this._deps.editorPanel.updateTerminalFilter({ type: 'select', value: 'unknownTransaction' })
         }
       }
     })
 
-    opts.events.txListener.register('newBlock', (block) => {
+    this._deps.txListener.event.register('newBlock', (block) => {
       if (!block.transactions.length) {
         this.logEmptyBlock({ block: block })
       }
     })
 
-    opts.events.txListener.register('newTransaction', (tx) => {
-      log(this, tx, opts.api)
+    this._deps.txListener.event.register('newTransaction', (tx, receipt) => {
+      log(this, tx, receipt)
     })
 
-    opts.events.txListener.register('newCall', (tx) => {
-      log(this, tx, opts.api)
+    this._deps.txListener.event.register('newCall', (tx) => {
+      log(this, tx, null)
     })
   }
 }
@@ -195,21 +205,25 @@ function debug (e, data, self) {
   if (data.tx.isCall && data.tx.envMode !== 'vm') {
     modalDialog.alert('Cannot debug this call. Debugging calls is only possible in JavaScript VM mode.')
   } else {
-    self.event.trigger('debugRequested', [data.tx.hash])
+    self._deps.app.startdebugging(data.tx.hash)
   }
 }
 
-function log (self, tx, api) {
-  var resolvedTransaction = api.resolvedTransaction(tx.hash)
+function log (self, tx, receipt) {
+  var resolvedTransaction = self._deps.txListener.resolvedTransaction(tx.hash)
   if (resolvedTransaction) {
-    api.parseLogs(tx, resolvedTransaction.contractName, api.compiledContracts(), (error, logs) => {
+    var compiledContracts = null
+    if (self._deps.compiler.lastCompilationResult && self._deps.compiler.lastCompilationResult.data) {
+      compiledContracts = self._deps.compiler.lastCompilationResult.data.contracts
+    }
+    self._deps.eventsDecoder.parseLogs(tx, resolvedTransaction.contractName, compiledContracts, (error, logs) => {
       if (!error) {
-        self.logKnownTX({ tx: tx, resolvedData: resolvedTransaction, logs: logs })
+        self.logKnownTX({ tx: tx, receipt: receipt, resolvedData: resolvedTransaction, logs: logs })
       }
     })
   } else {
     // contract unknown - just displaying raw tx.
-    self.logUnknownTX({ tx: tx })
+    self.logUnknownTX({ tx: tx, receipt: receipt })
   }
 }
 
@@ -221,7 +235,7 @@ function renderKnownTransaction (self, data) {
   var tx = yo`
     <span id="tx${data.tx.hash}">
       <div class="${css.log}" onclick=${e => txDetails(e, tx, data, obj)}>
-        ${checkTxStatus(data.tx, txType)}
+        ${checkTxStatus(data.receipt, txType)}
         ${context(self, {from, to, data})}
         <div class=${css.buttons}>
           <div class=${css.debug} onclick=${(e) => debug(e, data, self)}>Debug</div>
@@ -267,7 +281,7 @@ function renderUnknownTransaction (self, data) {
   var tx = yo`
     <span id="tx${data.tx.hash}">
       <div class="${css.log}" onclick=${e => txDetails(e, tx, data, obj)}>
-        ${checkTxStatus(data.tx, txType)}
+        ${checkTxStatus(data.receipt, txType)}
         ${context(self, {from, to, data})}
         <div class=${css.buttons}>
           <div class=${css.debug} onclick=${(e) => debug(e, data, self)}>Debug</div>
@@ -370,7 +384,8 @@ function txDetails (e, tx, data, obj) {
     log.removeChild(arrow)
     log.appendChild(arrowUp)
     table = createTable({
-      status: data.tx.status,
+      hash: data.tx.hash,
+      status: data.receipt ? data.receipt.status : null,
       isCall: data.tx.isCall,
       contractAddress: data.tx.contractAddress,
       data: data.tx,
@@ -405,9 +420,19 @@ function createTable (opts) {
     </tr>`)
   }
 
+  var transactionHash = yo`
+    <tr class="${css.tr}">
+      <td class="${css.td}"> transaction hash </td>
+      <td class="${css.td}">${opts.hash}
+        ${copyToClipboard(() => opts.hash)}
+      </td>
+    </tr>
+  `
+  table.appendChild(transactionHash)
+
   var contractAddress = yo`
     <tr class="${css.tr}">
-      <td class="${css.td}"> contractAddress </td>
+      <td class="${css.td}"> contract address </td>
       <td class="${css.td}">${opts.contractAddress}
         ${copyToClipboard(() => opts.contractAddress)}
       </td>

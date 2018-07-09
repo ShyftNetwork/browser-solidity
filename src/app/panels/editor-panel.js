@@ -1,58 +1,74 @@
 var yo = require('yo-yo')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
+var $ = require('jquery')
 
 var Terminal = require('./terminal')
+var Editor = require('../editor/editor')
+var globalRegistry = require('../../global/registry')
 
+var CommandInterpreter = require('../../lib/cmdInterpreter')
+var ContextualListener = require('../editor/contextualListener')
+var ContextView = require('../editor/contextView')
 var styles = require('./styles/editor-panel-styles')
 var cssTabs = styles.cssTabs
 var css = styles.css
 
 class EditorPanel {
-  constructor (opts = {}) {
+  constructor (localRegistry) {
     var self = this
-    self._api = opts.api
+    self._components = {}
+    self._components.registry = localRegistry || globalRegistry
     self.event = new EventManager()
+  }
+  init () {
+    var self = this
+    self._deps = {
+      config: self._components.registry.get('config').api,
+      txlistener: self._components.registry.get('txlistener').api,
+      fileManager: self._components.registry.get('filemanager').api,
+      udapp: self._components.registry.get('udapp').api
+    }
     self.data = {
       _FILE_SCROLL_DELTA: 200,
       _layout: {
         top: {
-          offset: self._api.config.get('terminal-top-offset') || 500,
+          offset: self._deps.config.get('terminal-top-offset') || 500,
           show: true
         }
       }
     }
     self._view = {}
+    var editor = new Editor({})
+    self._components.registry.put({api: editor, name: 'editor'})
+    var contextualListener = new ContextualListener({editor: editor})
     self._components = {
-      editor: opts.api.editor, // @TODO: instantiate in eventpanel instead of passing via `opts`
+      editor: editor,
+      contextualListener: contextualListener,
+      contextView: new ContextView({contextualListener: contextualListener, editor: editor}),
       terminal: new Terminal({
-        api: {
-          cmdInterpreter: self._api.cmdInterpreter,
-          udapp: self._api.udapp,
-          getPosition (event) {
+        udapp: self._deps.udapp,
+        cmdInterpreter: new CommandInterpreter()
+      },
+        {
+          getPosition: (event) => {
             var limitUp = 36
             var limitDown = 20
             var height = window.innerHeight
             var newpos = (event.pageY < limitUp) ? limitUp : event.pageY
             newpos = (newpos < height - limitDown) ? newpos : height - limitDown
             return newpos
-          },
-          web3 () {
-            return self._api.web3()
-          },
-          context () {
-            return self._api.context()
           }
-        }
-      })
+        })
     }
+
     self._components.terminal.event.register('filterChanged', (type, value) => {
       this.event.trigger('terminalFilterChanged', [type, value])
     })
     self._components.terminal.event.register('resize', delta => self._adjustLayout('top', delta))
-    if (self._api.txListener) {
+    if (self._deps.txListener) {
       self._components.terminal.event.register('listenOnNetWork', (listenOnNetWork) => {
-        self._api.txListener.setListenOnNetwork(listenOnNetWork)
+        self._deps.txListener.setListenOnNetwork(listenOnNetWork)
       })
     }
     if (document && document.head) {
@@ -72,7 +88,7 @@ class EditorPanel {
         else delta = containerHeight
       } else {
         layout.show = true
-        self._api.config.set(`terminal-${direction}-offset`, delta)
+        self._deps.config.set(`terminal-${direction}-offset`, delta)
         layout.offset = delta
       }
     }
@@ -87,6 +103,10 @@ class EditorPanel {
       self._components.terminal.scroll2bottom()
     }
   }
+  getEditor () {
+    var self = this
+    return self._components.editor
+  }
   refresh () {
     var self = this
     self._view.tabs.onmouseenter()
@@ -95,6 +115,14 @@ class EditorPanel {
     var self = this
     var command = self._components.terminal.commands[data.type]
     if (typeof command === 'function') command(data.value)
+  }
+  logMessage (msg) {
+    var self = this
+    self.log({type: 'log', value: msg})
+  }
+  logHtmlMessage (msg) {
+    var self = this
+    self.log({type: 'html', value: msg})
   }
   render () {
     var self = this
@@ -105,7 +133,7 @@ class EditorPanel {
       <div class=${css.content}>
         ${self._renderTabsbar()}
         <div class=${css.contextviewcontainer}>
-          ${self._api.contextview.render()}
+          ${self._components.contextView.render()}
         </div>
         ${self._view.editor}
         ${self._view.terminal}
@@ -159,6 +187,32 @@ class EditorPanel {
         </span>
       </div>
     `
+
+    // tabs
+    var $filesEl = $(self._view.filetabs)
+
+    // Switch tab
+    $filesEl.on('click', '.file:not(.active)', function (ev) {
+      ev.preventDefault()
+      self._deps.fileManager.switchFile($(this).find('.name').text())
+      return false
+    })
+
+    // Remove current tab
+    $filesEl.on('click', '.file .remove', function (ev) {
+      ev.preventDefault()
+      var name = $(this).parent().find('.name').text()
+      delete self._deps.fileManager.tabbedFiles[name]
+      self._deps.fileManager.refreshTabs()
+      if (Object.keys(self._deps.fileManager.tabbedFiles).length) {
+        self._deps.fileManager.switchFile(Object.keys(self._deps.fileManager.tabbedFiles)[0])
+      } else {
+        self._deps.editor.displayEmptyReadOnlySession()
+        self._deps.config.set('currentFile', '')
+      }
+      return false
+    })
+
     return self._view.tabsbar
     function toggleScrollers (event = {}) {
       if (event.type) self.data._focus = event.type

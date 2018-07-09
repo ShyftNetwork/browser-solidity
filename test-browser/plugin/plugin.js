@@ -11,71 +11,46 @@ const addrResolverTx = {
   value: '0x00',
   useCall: false
 }
-
-function receiveMessage (event) {
-  console.log('receiveMessage', event.data, event.source, event.origin)
-  document.getElementById('compilationdata').innerHTML += event.data + '<br>'
-}
-window.addEventListener('message', receiveMessage, false)
-
+var extension = new window.RemixExtension()
 window.onload = function () {
+  extension.listen('compiler', 'compilationFinished', function () {
+    console.log(arguments)
+  })
+
+  setInterval(function () {
+    extension.call('app', 'detectNetWork', [], function (error, result) {
+      console.log(error, result)
+    })
+  }, 5000)
+
   document.querySelector('input#testmessageadd').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'config',
-      type: 'setConfig',
-      value: [document.getElementById('filename').value, document.getElementById('valuetosend').value],
-      id: 34
-    }), '*')
+    extension.call('config', 'setConfig', [document.getElementById('filename').value, document.getElementById('valuetosend').value],
+    function (error, result) { console.log(error, result) })
   })
 
   document.querySelector('input#testmessageremove').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'config',
-      type: 'removeConfig',
-      value: [document.getElementById('filename').value],
-      id: 35
-    }), '*')
+    extension.call('config', 'removeConfig', [document.getElementById('filename').value],
+    function (error, result) { console.log(error, result) })
   })
 
   document.querySelector('input#testmessagerget').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'config',
-      type: 'getConfig',
-      value: [document.getElementById('filename').value],
-      id: 36
-    }), '*')
+    extension.call('config', 'getConfig', [document.getElementById('filename').value],
+    function (error, result) { console.log(error, result) })
   })
 
   document.querySelector('input#testcontractcreation').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'udapp',
-      type: 'runTx',
-      value: [addrResolverTx],
-      id: 37
-    }), '*')
+    extension.call('udapp', 'runTx', [addrResolverTx],
+    function (error, result) { console.log(error, result) })
   })
 
   document.querySelector('input#testaccountcreation').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'udapp',
-      type: 'createVMAccount',
-      value: ['71975fbf7fe448e004ac7ae54cad0a383c3906055a75468714156a07385e96ce', '0x56BC75E2D63100000'],
-      id: 38
-    }), '*')
+    extension.call('udapp', 'createVMAccount', ['71975fbf7fe448e004ac7ae54cad0a383c3906055a75468714156a07385e96ce', '0x56BC75E2D63100000'],
+    function (error, result) { console.log(error, result) })
   })
+
   var k = 0
   document.querySelector('input#testchangetitle').addEventListener('click', function () {
-    window.parent.postMessage(JSON.stringify({
-      action: 'request',
-      key: 'app',
-      type: 'updateTitle',
-      value: ['changed title ' + k++],
-      id: 39
-    }), '*')
+    extension.call('app', 'updateTitle', ['changed title ' + k++],
+    function (error, result) { console.log(error, result) })
   })
 }

@@ -2,31 +2,38 @@ const yo = require('yo-yo')
 const csjs = require('csjs-inject')
 const remixLib = require('remix-lib')
 
+var globalRegistry = require('../../global/registry')
 const styles = require('../ui/styles-guide/theme-chooser').chooser()
 
 const EventManager = remixLib.EventManager
 
 module.exports = class SupportTab {
-  constructor (api = {}, events = {}, opts = {}) {
+  constructor (localRegistry) {
     const self = this
     self.event = new EventManager()
-    self._api = api
-    self._events = events
-    self._opts = opts
     self._view = { el: null, gitterIframe: '' }
     self.data = { gitterIsLoaded: false }
     self._components = {}
-    self._events.app.register('tabChanged', (tabName) => {
+    self._components.registry = localRegistry || globalRegistry
+
+    self._deps = {
+      app: self._components.registry.get('app').api
+    }
+
+    self._deps.app.event.register('tabChanged', (tabName) => {
       if (tabName !== 'Support' || self.data.gitterIsLoaded) return
-      if (!self._view.gitterIframe) self._view.gitterIframe = yo`<iframe class="${css.chatIframe}" src='https://gitter.im/ethereum/remix/~embed'>`
-      yo.update(self._view.el, self.render())
+      const iframe = yo`<iframe class="${css.chatIframe}" src='https://gitter.im/ethereum/remix/~embed'>`
+      self._view.gitterIframe.parentNode.replaceChild(iframe, self._view.gitterIframe)
+      self._view.gitterIframe = iframe
       self._view.el.style.display = 'block'
       self.data.gitterIsLoaded = true
     })
   }
   render () {
     const self = this
-    var el = yo`
+    if (self._view.el) return self._view.el
+    self._view.gitterIframe = yo`<div></div>`
+    self._view.el = yo`
       <div class="${css.supportTabView}" id="supportView">
         <div class="${css.infoBox}">
           Have a question, found a bug or want to propose a feature? Have a look at the
@@ -41,8 +48,7 @@ module.exports = class SupportTab {
           ${self._view.gitterIframe}
         </div>
       </div>`
-    if (!self._view.el) self._view.el = el
-    return el
+    return self._view.el
     function openLink () { window.open('https://gitter.im/ethereum/remix') }
   }
 }

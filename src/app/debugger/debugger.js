@@ -4,16 +4,26 @@ var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var remixCore = require('@shyftnetwork/shyft_remix-core')
 var Ethdebugger = require('./remix-debugger/src/ui/Ethdebugger')
 var executionContext = require('../../execution-context')
+var globlalRegistry = require('../../global/registry')
 
 /**
  * Manage remix and source highlighting
  */
-function Debugger (id, appAPI, editorEvent) {
-  this.el = document.querySelector(id)
+function Debugger (container, sourceHighlighter, localRegistry) {
+  this._components = {
+    sourceHighlighter: sourceHighlighter
+  }
+  this._components.registry = localRegistry || globlalRegistry
+  // dependencies
+  this._deps = {
+    offsetToLineColumnConverter: this._components.registry.get('offsettolinecolumnconverter').api,
+    editor: this._components.registry.get('editor').api,
+    compiler: this._components.registry.get('compiler').api
+  }
   this.debugger = new Ethdebugger(
     {
       compilationResult: () => {
-        var compilationResult = self.appAPI.lastCompilationResult()
+        var compilationResult = this._deps.compiler.lastCompilationResult
         if (compilationResult) {
           return compilationResult.data
         }
@@ -21,12 +31,11 @@ function Debugger (id, appAPI, editorEvent) {
       }
     })
   this.sourceMappingDecoder = new remixLib.SourceMappingDecoder()
-  this.el.appendChild(this.debugger.render())
-  this.appAPI = appAPI
+  container.appendChild(this.debugger.render())
   this.isActive = false
 
   this.breakPointManager = new remixCore.code.BreakpointManager(this.debugger, (sourceLocation) => {
-    return appAPI.offsetToLineColumn(sourceLocation, sourceLocation.file, this.editor, this.appAPI.lastCompilationResult().data)
+    return self._deps.offsetToLineColumnConverter.offsetToLineColumn(sourceLocation, sourceLocation.file, this._deps.compiler.lastCompilationResult.source.sources)
   })
 
   this.debugger.setBreakpointManager(this.breakPointManager)
@@ -34,11 +43,11 @@ function Debugger (id, appAPI, editorEvent) {
   })
 
   var self = this
-  editorEvent.register('breakpointCleared', (fileName, row) => {
+  self._deps.editor.event.register('breakpointCleared', (fileName, row) => {
     this.breakPointManager.remove({fileName: fileName, row: row})
   })
 
-  editorEvent.register('breakpointAdded', (fileName, row) => {
+  self._deps.editor.event.register('breakpointAdded', (fileName, row) => {
     this.breakPointManager.add({fileName: fileName, row: row})
   })
 
@@ -51,24 +60,24 @@ function Debugger (id, appAPI, editorEvent) {
   })
 
   this.debugger.event.register('traceUnloaded', this, function () {
-    self.appAPI.currentSourceLocation(null)
+    self._components.sourceHighlighter.currentSourceLocation(null)
     self.isActive = false
   })
 
   // unload if a file has changed (but not if tabs were switched)
-  editorEvent.register('contentChanged', function () {
+  self._deps.editor.event.register('contentChanged', function () {
     self.debugger.unLoad()
   })
 
   // register selected code item, highlight the corresponding source location
   this.debugger.codeManager.event.register('changed', this, function (code, address, index) {
-    if (self.appAPI.lastCompilationResult()) {
-      this.debugger.callTree.sourceLocationTracker.getSourceLocationFromInstructionIndex(address, index, self.appAPI.lastCompilationResult().data.contracts, function (error, rawLocation) {
-        if (!error) {
-          var lineColumnPos = self.appAPI.offsetToLineColumn(rawLocation, rawLocation.file)
-          self.appAPI.currentSourceLocation(lineColumnPos, rawLocation)
+    if (self._deps.compiler.lastCompilationResult) {
+      self.debugger.callTree.sourceLocationTracker.getSourceLocationFromInstructionIndex(address, index, self._deps.compiler.lastCompilationResult.data.contracts, function (error, rawLocation) {
+        if (!error && self._deps.compiler.lastCompilationResult && self._deps.compiler.lastCompilationResult.data) {
+          var lineColumnPos = self._deps.offsetToLineColumnConverter.offsetToLineColumn(rawLocation, rawLocation.file, self._deps.compiler.lastCompilationResult.source.sources)
+          self._components.sourceHighlighter.currentSourceLocation(lineColumnPos, rawLocation)
         } else {
-          self.appAPI.currentSourceLocation(null)
+          self._components.sourceHighlighter.currentSourceLocation(null)
         }
       })
     }

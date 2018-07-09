@@ -1,4 +1,5 @@
 'use strict'
+var executionContext = require('../../execution-context')
 /**
  * Register and Manage plugin:
  *
@@ -76,15 +77,13 @@
  *
  */
 module.exports = class PluginManager {
-  constructor (api = {}, events = {}, opts = {}) {
+  constructor (pluginAPI, app, compiler, txlistener) {
     const self = this
-    self._opts = opts
-    self._api = api
-    self._events = events
     self.plugins = {}
+    self.origins = {}
     self.inFocus
     self.allowedapi = {'setConfig': 1, 'getConfig': 1, 'removeConfig': 1}
-    self._events.compiler.register('compilationFinished', (success, data, source) => {
+    compiler.event.register('compilationFinished', (success, data, source) => {
       if (self.inFocus) {
         // trigger to the current focus
         self.post(self.inFocus, JSON.stringify({
@@ -96,7 +95,17 @@ module.exports = class PluginManager {
       }
     })
 
-    self._events.app.register('tabChanged', (tabName) => {
+    txlistener.event.register('newTransaction', (tx) => {
+      if (executionContext.getProvider() !== 'vm') return
+      self.broadcast(JSON.stringify({
+        action: 'notification',
+        key: 'txlistener',
+        type: 'newTransaction',
+        value: [tx]
+      }))
+    })
+
+    app.event.register('tabChanged', (tabName) => {
       if (self.inFocus && self.inFocus !== tabName) {
         // trigger unfocus
         self.post(self.inFocus, JSON.stringify({
@@ -115,18 +124,25 @@ module.exports = class PluginManager {
           value: []
         }))
         self.inFocus = tabName
-        self.post(tabName, JSON.stringify({
-          action: 'notification',
-          key: 'compiler',
-          type: 'compilationData',
-          value: [api.compiler.getCompilationResult()]
-        }))
+        pluginAPI.compiler.getCompilationResult(tabName, (error, data) => {
+          if (!error) return
+          self.post(tabName, JSON.stringify({
+            action: 'notification',
+            key: 'compiler',
+            type: 'compilationData',
+            value: [data]
+          }))
+        })
       }
     })
 
     window.addEventListener('message', (event) => {
+      if (event.type !== 'message') return
+      var extension = self.origins[event.origin]
+      if (!extension) return
+
       function response (key, type, callid, error, result) {
-        self.post(self.inFocus, JSON.stringify({
+        self.postToOrigin(event.origin, JSON.stringify({
           id: callid,
           action: 'response',
           key: key,
@@ -135,21 +151,35 @@ module.exports = class PluginManager {
           value: [ result ]
         }))
       }
-      if (event.type === 'message' && self.inFocus && self.plugins[self.inFocus] && self.plugins[self.inFocus].origin === event.origin) {
-        var data = JSON.parse(event.data)
-        data.value.unshift(self.inFocus)
-        if (self.allowedapi[data.type]) {
-          data.value.push((error, result) => {
-            response(data.key, data.type, data.id, error, result)
-          })
-          api[data.key][data.type].apply({}, data.value)
-        }
-      }
+      var data = JSON.parse(event.data)
+      data.value.unshift(extension)
+      // if (self.allowedapi[data.type]) {
+      data.value.push((error, result) => {
+        response(data.key, data.type, data.id, error, result)
+      })
+      pluginAPI[data.key][data.type].apply({}, data.value)
+      // }
     }, false)
+  }
+  unregister (desc) {
+    const self = this
+    delete self.plugins[desc.title]
+    delete self.origins[desc.url]
   }
   register (desc, content) {
     const self = this
     self.plugins[desc.title] = {content, origin: desc.url}
+    self.origins[desc.url] = desc.title
+  }
+  broadcast (value) {
+    for (var plugin in this.plugins) {
+      this.post(plugin, value)
+    }
+  }
+  postToOrigin (origin, value) {
+    if (this.origins[origin]) {
+      this.post(this.origins[origin], value)
+    }
   }
   post (name, value) {
     const self = this

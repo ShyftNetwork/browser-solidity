@@ -5,7 +5,7 @@ var csjs = require('csjs-inject')
 var yo = require('yo-yo')
 var async = require('async')
 var request = require('request')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var remixTests = require('remix-tests')
 var EventManager = remixLib.EventManager
 
@@ -25,7 +25,7 @@ var SharedFolder = require('./app/files/shared-folder')
 var Config = require('./config')
 var Editor = require('./app/editor/editor')
 var Renderer = require('./app/ui/renderer')
-var Compiler = require('remix-solidity').Compiler
+var Compiler = require('@shyftnetwork/shyft_remix-solidity').Compiler
 var executionContext = require('./execution-context')
 var Debugger = require('./app/debugger/debugger')
 var StaticAnalysis = require('./app/staticanalysis/staticAnalysisView')

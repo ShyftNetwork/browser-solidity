@@ -1,7 +1,7 @@
 var TreeView = require('./TreeView')
 var ethJSUtil = require('ethereumjs-util')
 var BN = ethJSUtil.BN
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var txFormat = remixLib.execution.txFormat
 
 module.exports = {

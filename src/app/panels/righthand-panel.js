@@ -1,6 +1,6 @@
 const yo = require('yo-yo')
 const csjs = require('csjs-inject')
-const remixLib = require('remix-lib')
+const remixLib = require('@shyftnetwork/shyft_remix-lib')
 
 const styleguide = require('../ui/styles-guide/theme-chooser')
 const PluginManager = require('../plugin/pluginManager')

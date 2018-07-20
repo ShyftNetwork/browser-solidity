@@ -1,6 +1,6 @@
 var yo = require('yo-yo')
 var csjs = require('csjs-inject')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 
 var helper = require('../../lib/helper')
 var styles = require('../ui/styles-guide/theme-chooser').chooser()

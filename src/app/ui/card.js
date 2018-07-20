@@ -2,7 +2,7 @@ var yo = require('yo-yo')
 var csjs = require('csjs-inject')
 var styleGuide = require('./styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 
 module.exports = class Card {

@@ -4,7 +4,7 @@ var copyToClipboard = require('../ui/copy-to-clipboard')
 
 // -------------- styling ----------------------
 var csjs = require('csjs-inject')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var styleGuide = require('../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
 

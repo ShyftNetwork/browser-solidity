@@ -1,7 +1,7 @@
 'use strict'
 
 var $ = require('jquery')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var yo = require('yo-yo')
 var EventManager = remixLib.EventManager
 

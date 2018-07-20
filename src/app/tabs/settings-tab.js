@@ -2,7 +2,7 @@
 var yo = require('yo-yo')
 var csjs = require('csjs-inject')
 var minixhr = require('minixhr')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var QueryParams = require('../../lib/query-params')
 var helper = require('../../lib/helper')
 var modal = require('../ui/modal-dialog-custom')
@@ -34,7 +34,7 @@ module.exports = class SettingsTab {
     self.data = {
       allversions: null,
       selectedVersion: null,
-      baseurl: 'https://solc-bin.ethereum.org/bin'
+      baseurl: 'https://shyftnetwork.github.io/shyft_solc-bin/bin'
     }
     self.event = new EventManager()
     self._components.queryParams = new QueryParams()

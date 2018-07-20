@@ -4,7 +4,7 @@ var javascriptserialize = require('javascript-serialize')
 var jsbeautify = require('js-beautify')
 var type = require('component-type')
 var vm = require('vm')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 var Web3 = require('web3')
 

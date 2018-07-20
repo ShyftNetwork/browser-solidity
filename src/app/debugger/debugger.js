@@ -1,8 +1,8 @@
 'use strict'
 
 var Ethdebugger = require('./remix-debugger/src/ui/Ethdebugger')
-var remixLib = require('remix-lib')
-var remixCore = require('remix-core')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
+var remixCore = require('@shyftnetwork/shyft_remix-core')
 var executionContext = require('../../execution-context')
 
 /**

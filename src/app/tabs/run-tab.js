@@ -1,7 +1,7 @@
 'use strict'
 var $ = require('jquery')
 var yo = require('yo-yo')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var ethJSUtil = require('ethereumjs-util')
 var csjs = require('csjs-inject')
 var txExecution = remixLib.execution.txExecution

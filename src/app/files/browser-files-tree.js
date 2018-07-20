@@ -1,6 +1,6 @@
 'use strict'
 
-var EventManager = require('remix-lib').EventManager
+var EventManager = require('@shyftnetwork/shyft_remix-lib').EventManager
 
 function FilesTree (name, storage) {
   var self = this

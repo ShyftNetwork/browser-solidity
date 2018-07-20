@@ -1,5 +1,5 @@
 'use strict'
-var EventManager = require('remix-lib').EventManager
+var EventManager = require('@shyftnetwork/shyft_remix-lib').EventManager
 
 class BasicReadOnlyExplorer {
   constructor (type) {

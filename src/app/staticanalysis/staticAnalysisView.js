@@ -1,8 +1,8 @@
 'use strict'
-var StaticAnalysisRunner = require('remix-solidity').CodeAnalysis
+var StaticAnalysisRunner = require('@shyftnetwork/shyft_remix-solidity').CodeAnalysis
 var yo = require('yo-yo')
 var $ = require('jquery')
-var remixLib = require('remix-lib')
+var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var utils = remixLib.util
 
 var styleGuide = require('../ui/styles-guide/theme-chooser')

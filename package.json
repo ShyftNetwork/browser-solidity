@@ -1,7 +1,6 @@
 {
-  "private": true,
   "name": "@shyftnetwork/shyft_remix-ide",
-  "version": "0.0.2",
+  "version": "0.6.4",
   "description": "Minimalistic browser-based Solidity IDE",
   "devDependencies": {
     "ace-mode-solidity": "^0.1.0",

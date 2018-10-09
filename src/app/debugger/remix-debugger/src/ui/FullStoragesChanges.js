@@ -1,6 +1,6 @@
 'use strict'
 var DropdownPanel = require('./DropdownPanel')
-var remixDebug = require('remix-debug')
+var remixDebug = require('@shyftnetwork/shyft_remix-debug')
 var StorageViewer = remixDebug.storage.StorageViewer
 var yo = require('yo-yo')
 

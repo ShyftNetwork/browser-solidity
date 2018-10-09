@@ -1,7 +1,7 @@
 'use strict'
 var VMDebugger = require('./src/ui/VmDebugger')
 var Debugger = require('./src/ui/EthdebuggerUI')
-var DebuggerBackend = require('remix-debug').EthDebugger
+var DebuggerBackend = require('@shyftnetwork/shyft_remix-debug').EthDebugger
 
 if (typeof (module) !== 'undefined' && typeof (module.exports) !== 'undefined') {
   module.exports = modules()

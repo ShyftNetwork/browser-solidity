@@ -1,6 +1,6 @@
 'use strict'
 var DropdownPanel = require('./DropdownPanel')
-var remixDebug = require('remix-debug')
+var remixDebug = require('@shyftnetwork/shyft_remix-debug')
 var localDecoder = remixDebug.SolidityDecoder.localDecoder
 var solidityTypeFormatter = require('./SolidityTypeFormatter')
 var StorageViewer = remixDebug.storage.StorageViewer

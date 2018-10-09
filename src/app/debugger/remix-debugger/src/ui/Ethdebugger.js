@@ -12,7 +12,7 @@ var csjs = require('csjs-inject')
 var Web3Providers = remixLib.vm.Web3Providers
 var DummyProvider = remixLib.vm.DummyProvider
 var CodeManager = remixLib.code.CodeManager
-var remixDebug = require('remix-debug')
+var remixDebug = require('@shyftnetwork/shyft_remix-debug')
 var SolidityProxy = remixDebug.SolidityDecoder.SolidityProxy
 var InternalCallTree = remixDebug.SolidityDecoder.InternalCallTree
 

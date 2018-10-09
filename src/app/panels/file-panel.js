@@ -2,6 +2,7 @@
 var async = require('async')
 var $ = require('jquery')
 var yo = require('yo-yo')
+var CompilerMetadata = require('../files/compiler-metadata')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var Gists = require('gists')
 var EventManager = remixLib.EventManager
@@ -48,7 +49,8 @@ function filepanel (localRegistry) {
   self._deps = {
     fileProviders: self._components.registry.get('fileproviders').api,
     fileManager: self._components.registry.get('filemanager').api,
-    config: self._components.registry.get('config').api
+    config: self._components.registry.get('config').api,
+    compiler: self._components.registry.get('compiler').api
   }
   var fileExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['browser'])
   var fileSystemExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['localhost'])
@@ -56,7 +58,23 @@ function filepanel (localRegistry) {
   var githubExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['github'])
   var gistExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['gist'])
   var configExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['config'])
+  var httpExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['http'])
+  var httpsExplorer = new FileExplorer(self._components.registry, self._deps.fileProviders['https'])
 
+  // ----------------- editor panel ----------------------
+  self._compilerMetadata = new CompilerMetadata(
+    {
+      compiler: self._deps.compiler.event
+    },
+    {
+      fileManager: self._deps.fileManager,
+      compiler: self._deps.compiler,
+      config: self._deps.config
+    }
+  )
+  self._compilerMetadata.syncContractMetadata()
+
+  self.compilerMetadata = () => { return self._compilerMetadata }
   var dragbar = yo`<div onmousedown=${mousedown} class=${css.dragbar}></div>`
 
   function remixdDialog () {
@@ -110,6 +128,8 @@ function filepanel (localRegistry) {
             <div class="swarmexplorer ${css.treeview}">${swarmExplorer.init()}</div>
             <div class="githubexplorer ${css.treeview}">${githubExplorer.init()}</div>
             <div class="gistexplorer ${css.treeview}">${gistExplorer.init()}</div>
+            <div class="httpexplorer ${css.treeview}">${httpExplorer.init()}</div>
+            <div class="httpsexplorer ${css.treeview}">${httpsExplorer.init()}</div>
           </div>
         </div>
         ${dragbar}
@@ -167,6 +187,14 @@ function filepanel (localRegistry) {
   })
 
   gistExplorer.events.register('focus', function (path) {
+    self._deps.fileManager.switchFile(path)
+  })
+
+  httpExplorer.events.register('focus', function (path) {
+    self._deps.fileManager.switchFile(path)
+  })
+
+  httpsExplorer.events.register('focus', function (path) {
     self._deps.fileManager.switchFile(path)
   })
 
@@ -249,7 +277,11 @@ function filepanel (localRegistry) {
         if (!self._deps.fileProviders['browser'].set(newName, '')) {
           modalDialogCustom.alert('Failed to create file ' + newName)
         } else {
-          self._deps.fileManager.switchFile(self._deps.fileProviders['browser'].type + '/' + newName)
+          var file = self._deps.fileProviders['browser'].type + '/' + newName
+          self._deps.fileManager.switchFile(file)
+          if (file.includes('_test.sol')) {
+            self.event.trigger('newTestFileCreated', [file])
+          }
         }
       })
     }, null, true)

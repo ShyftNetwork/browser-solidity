@@ -148,6 +148,8 @@ class App {
     self._components.filesProviders['github'] = new BasicReadOnlyExplorer('github')
     self._components.filesProviders['gist'] = new NotPersistedExplorer('gist')
     self._components.filesProviders['ipfs'] = new BasicReadOnlyExplorer('ipfs')
+    self._components.filesProviders['https'] = new BasicReadOnlyExplorer('https')
+    self._components.filesProviders['http'] = new BasicReadOnlyExplorer('http')
     registry.put({api: self._components.filesProviders['localhost'], name: 'fileproviders/localhost'})
     registry.put({api: self._components.filesProviders['swarm'], name: 'fileproviders/swarm'})
     registry.put({api: self._components.filesProviders['github'], name: 'fileproviders/github'})
@@ -321,6 +323,9 @@ class App {
     }
     var provider = self._components.fileManager.fileProviderOf(url)
     if (provider) {
+      if (provider.type === 'localhost' && !provider.isConnected()) {
+        return filecb(`file provider ${provider.type} not available while trying to resolve ${url}`)
+      }
       provider.exists(url, (error, exist) => {
         if (error) return filecb(error)
         if (exist) {
@@ -474,6 +479,7 @@ Please make a backup of your contracts and start using http://remix.ethereum.org
   self._components.filePanel = new FilePanel()
   self._view.leftpanel.appendChild(self._components.filePanel.render())
   self._components.filePanel.event.register('resize', delta => self._adjustLayout('left', delta))
+  registry.put({api: self._components.filePanel, name: 'filepanel'})
 
   // ----------------- Renderer -----------------
   var renderer = new Renderer()

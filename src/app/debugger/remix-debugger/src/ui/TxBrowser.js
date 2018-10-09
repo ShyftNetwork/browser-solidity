@@ -1,10 +1,8 @@
 var remixLib = require('remix-lib')
-var global = remixLib.global
 var EventManager = remixLib.EventManager
 var traceHelper = remixLib.helpers.trace
 var yo = require('yo-yo')
 var init = remixLib.init
-var DropdownPanel = require('./DropdownPanel')
 var csjs = require('csjs-inject')
 var styleGuide = require('../../../../ui/styles-guide/theme-chooser')
 var styles = styleGuide.chooser()
@@ -25,8 +23,8 @@ var css = csjs`
   }
   .txinput {
     ${styles.rightPanel.debuggerTab.input_Debugger}
-    min-width: 30px;
     margin: 3px;
+    width: inherit;
   }
   .txbuttons {
     width: 100%;
@@ -35,30 +33,29 @@ var css = csjs`
   }
   .txbutton {
     ${styles.rightPanel.debuggerTab.button_Debugger}
+    width: inherit;
+  }
+  .txbuttonstart {
+    ${styles.rightPanel.debuggerTab.button_Debugger}
   }
   .txbutton:hover {
     color: ${styles.rightPanel.debuggerTab.button_Debugger_icon_HoverColor};
-  }
-  .txinfo {
-    margin-top: 5px;
   }
   .vmargin {
     margin-top: 10px;
     margin-bottom: 10px;
   }
 `
-function TxBrowser (_parent) {
+function TxBrowser (_parent, opts) {
   this.event = new EventManager()
 
   this.blockNumber
   this.txNumber
   this.view
-  this.displayConnectionSetting = true
-  this.basicPanel = new DropdownPanel('Transaction', {json: true})
-  this.basicPanel.data = {}
+  this.displayConnectionSetting = opts.displayConnectionSetting
+  this.web3 = opts.web3
   var self = this
   _parent.event.register('providerChanged', this, function (provider) {
-    self.displayConnectionSetting = provider === 'INTERNAL'
     self.setDefaultValues()
     if (self.view) {
       yo.update(self.view, self.render())
@@ -74,26 +71,28 @@ function TxBrowser (_parent) {
 
 TxBrowser.prototype.setDefaultValues = function () {
   this.connectInfo = ''
-  this.basicPanel.update({})
-  this.basicPanel.hide()
   if (this.view) {
     yo.update(this.view, this.render())
   }
 }
 
-TxBrowser.prototype.submit = function () {
+TxBrowser.prototype.submit = function (tx) {
+  var self = this
+  self.event.trigger('newTxLoading', [this.blockNumber, this.txNumber])
+  if (tx) {
+    return self.update(null, tx)
+  }
   if (!this.txNumber) {
+    self.update('no tx index or tx hash to look for')
     return
   }
-  this.event.trigger('newTxLoading', [this.blockNumber, this.txNumber])
   try {
-    var self = this
     if (this.txNumber.indexOf('0x') !== -1) {
-      global.web3.eth.getTransaction(this.txNumber, function (error, result) {
+      self.web3.eth.getTransaction(this.txNumber, function (error, result) {
         self.update(error, result)
       })
     } else {
-      global.web3.eth.getTransactionFromBlock(this.blockNumber, this.txNumber, function (error, result) {
+      self.web3.eth.getTransactionFromBlock(this.blockNumber, this.txNumber, function (error, result) {
         self.update(error, result)
       })
     }
@@ -124,7 +123,6 @@ TxBrowser.prototype.update = function (error, tx) {
       this.view.querySelector('#error').innerHTML = 'Cannot find transaction with reference. Block number: ' + this.blockNumber + '. Transaction index/hash: ' + this.txNumber
     }
   }
-  this.basicPanel.update(info)
 }
 
 TxBrowser.prototype.updateWeb3Url = function (newhost) {
@@ -159,9 +157,9 @@ TxBrowser.prototype.updateTxN = function (ev) {
   this.txNumber = ev.target.value
 }
 
-TxBrowser.prototype.load = function (txHash) {
+TxBrowser.prototype.load = function (txHash, tx) {
   this.txNumber = txHash
-  this.submit()
+  this.submit(tx)
 }
 
 TxBrowser.prototype.unload = function (txHash) {
@@ -193,14 +191,11 @@ TxBrowser.prototype.render = function () {
             <input class="${css.txinput}" id='txinput' onkeyup=${function () { self.updateTxN(arguments[0]) }} type='text' placeholder=${'Transaction index or hash'} />
           </div>
           <div class="${css.txbuttons}">
-            <button id='load' class='fa fa-play ${css.txbutton}' title='start debugging' onclick=${function () { self.submit() }}></button>
-            <button id='unload' class='fa fa-stop ${css.txbutton}' title='stop debugging' onclick=${function () { self.unload() }}></button>
+            <button id='load' class='${css.txbutton}' title='start debugging' onclick=${function () { self.submit() }}>Start debugging</button>
+            <button id='unload' class='${css.txbutton}' title='stop debugging' onclick=${function () { self.unload() }}>Stop</button>
           </div>
         </div>
         <span id='error'></span>
-        <div style=${css.txinfo} id='txinfo'>
-          ${this.basicPanel.render()}
-        </div>
       </div>`
   if (!this.view) {
     this.view = view

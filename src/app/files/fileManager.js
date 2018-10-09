@@ -71,6 +71,14 @@ class FileManager {
     this.refreshTabs()
   }
 
+  currentFileProvider () {
+    var path = this.currentPath()
+    if (path) {
+      return this.fileProviderOf(path)
+    }
+    return null
+  }
+
   currentPath () {
     var self = this
     var currentFile = self._deps.config.get('currentFile')
@@ -154,6 +162,7 @@ class FileManager {
   }
 
   fileProviderOf (file) {
+    if (!file) return null
     var provider = file.match(/[^/]*/)
     if (provider !== null && this._deps.filesProviders[provider[0]]) {
       return this._deps.filesProviders[provider[0]]

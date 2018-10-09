@@ -461,6 +461,7 @@ function styleGuideDark () {
       text_Secondary: appProperties.supportText_Color,
       text_RegularLog: appProperties.mainText_Color,
       text_InfoLog: appProperties.supportText_Color,
+      text_WarnLog: appProperties.warningText_Color,
       text_ErrorLog: appProperties.errorText_Color,
       text_Title_TransactionLog: appProperties.infoText_Color,
       text_Regular_TransactionLog: appProperties.supportText_Color,
@@ -645,6 +646,32 @@ function styleGuideDark () {
       },
 
       /* ::::::::::::::
+         TEST TAB
+      ::::::::::::::: */
+      testTab: {
+        box_listTests: appProperties.uiElements.solidBorderBox({
+          BackgroundColor: appProperties.solidBorderBox_BackgroundColor,
+          BorderColor: appProperties.solidBorderBox_BackgroundColor,
+          Color: appProperties.solidBorderBox_TextColor
+        }),
+
+        button_runTests: appProperties.uiElements.button({
+          BackgroundColor: appProperties.primaryButton_BackgroundColor,
+          BorderColor: appProperties.primaryButton_BorderColor,
+          Color: appProperties.primaryButton_TextColor
+        }),
+
+        button_generateTestFile: appProperties.uiElements.button({
+          BackgroundColor: appProperties.primaryButton_BackgroundColor,
+          BorderColor: appProperties.primaryButton_BorderColor,
+          Color: appProperties.primaryButton_TextColor
+        }),
+
+        color_testPass: appProperties.success_BackgroundColor,
+        color_testFail: appProperties.danger_BackgroundColor
+      },
+
+      /* ::::::::::::::
          SETTINGS TAB
       ::::::::::::::: */
       settingsTab: {
@@ -658,6 +685,18 @@ function styleGuideDark () {
           BackgroundColor: appProperties.dropdown_BackgroundColor,
           BorderColor: appProperties.dropdown_BorderColor,
           Color: appProperties.dropdown_TextColor
+        }),
+
+        button_LoadPlugin: appProperties.uiElements.button({
+          BackgroundColor: appProperties.secondaryButton_BackgroundColor,
+          BorderColor: appProperties.secondaryButton_BorderColor,
+          Color: appProperties.secondaryButton_TextColor
+        }),
+
+        button_initPlugin: appProperties.uiElements.button({
+          BackgroundColor: appProperties.transactButton_BackgroundColor,
+          BorderColor: appProperties.transactButton_BorderColor,
+          Color: appProperties.secondaryButton_TextColor
         })
 
       },

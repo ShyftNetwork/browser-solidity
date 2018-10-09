@@ -2,12 +2,15 @@
 var yo = require('yo-yo')
 var javascriptserialize = require('javascript-serialize')
 var jsbeautify = require('js-beautify')
+var ethers = require('ethers')
 var type = require('component-type')
 var vm = require('vm')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')
 var EventManager = remixLib.EventManager
 var Web3 = require('web3')
+var swarmgw = require('swarmgw')()
 
+var CommandInterpreterAPI = require('../../lib/cmdInterpreterAPI')
 var executionContext = require('../../execution-context')
 var Dropdown = require('../ui/dropdown')
 
@@ -37,6 +40,7 @@ class Terminal {
     }
     self._view = { el: null, bar: null, input: null, term: null, journal: null, cli: null }
     self._components = {}
+    self._components.cmdInterpreter = new CommandInterpreterAPI(this)
     self._components.dropdown = new Dropdown({
       options: [
         'only remix transactions',
@@ -70,11 +74,11 @@ class Terminal {
     self.registerCommand('html', self._blocksRenderer('html'), { activate: true })
     self.registerCommand('log', self._blocksRenderer('log'), { activate: true })
     self.registerCommand('info', self._blocksRenderer('info'), { activate: true })
+    self.registerCommand('warn', self._blocksRenderer('warn'), { activate: true })
     self.registerCommand('error', self._blocksRenderer('error'), { activate: true })
     self.registerCommand('script', function execute (args, scopedCommands, append) {
       var script = String(args[0])
       scopedCommands.log(`> ${script}`)
-      if (self._opts.cmdInterpreter && self._opts.cmdInterpreter.interpret(script)) return
       self._shell(script, scopedCommands, function (error, output) {
         if (error) scopedCommands.error(error)
         else scopedCommands.log(output)
@@ -84,6 +88,7 @@ class Terminal {
 
     self.registerFilter('log', basicFilter)
     self.registerFilter('info', basicFilter)
+    self.registerFilter('warn', basicFilter)
     self.registerFilter('error', basicFilter)
     self.registerFilter('script', basicFilter)
 
@@ -195,6 +200,10 @@ class Terminal {
         opacity          : 0.8;
         background-color : #a6aeba;
         cursor           : pointer;
+      }
+      .ul                 {
+        padding-left     : 20px;
+        padding-bottom   : 5px;
       }
     `
     var text = yo`<div class="${css2.overlay} ${css2.text}"></div>`
@@ -337,6 +346,23 @@ class Terminal {
     self._cmdIndex = -1
     self._cmdTemp = ''
 
+    var intro = yo`<div><div> - Welcome to Remix v0.6.4 - </div><br>
+                  <div>You can use this terminal for: </div>
+                  <ul class=${css2.ul}>
+                    <li>Checking transactions details and start debugging.</li>
+                    <li>Running JavaScript scripts. The following libraries are accessible:
+                      <ul class=${css2.ul}>
+                        <li><a target="_blank" href="https://web3js.readthedocs.io/en/1.0/">web3 version 1.0.0</a></li>
+                        <li><a target="_blank" href="https://docs.ethers.io/ethers.js/html/">ethers.js</a> </li>
+                        <li><a target="_blank" href="https://www.npmjs.com/package/swarmgw">swarmgw</a> </li>
+                      </ul>
+                    </li>
+                    <li>Executing common command to interact with the Remix interface (see list of commands above). Note that these commands can also be included and run from a JavaScript script.</li>
+                  </ul>
+                  </div>`
+
+    self._shell('remix.help()', self.commands, () => {})
+    self.commands.html(intro)
     return self._view.el
 
     function change (event) {
@@ -470,7 +496,7 @@ class Terminal {
         if (args.length) append(args[0])
       }
     }
-    mode = { log: styles.terminal.text_RegularLog, info: styles.terminal.text_InfoLog, error: styles.terminal.text_ErrorLog }[mode] // defaults
+    mode = { log: styles.terminal.text_RegularLog, info: styles.terminal.text_InfoLog, warn: styles.terminal.text_WarnLog, error: styles.terminal.text_ErrorLog }[mode] // defaults
     if (mode) {
       return function logger (args, scopedCommands, append) {
         var types = args.map(type)
@@ -546,6 +572,9 @@ class Terminal {
     return self.commands[name]
   }
   _shell (script, scopedCommands, done) { // default shell
+    if (script.indexOf('remix:') === 0) {
+      return done(null, 'This type of command has been deprecated and is not functionning anymore. Please run remix.help() to list available commands.')
+    }
     var self = this
     var context = domTerminalFeatures(self, scopedCommands)
     try {
@@ -561,10 +590,14 @@ class Terminal {
 
 function domTerminalFeatures (self, scopedCommands) {
   return {
-    web3: executionContext.getProvider() !== 'vm' ? new Web3(executionContext.web3().currentProvider) : null,
+    swarmgw,
+    ethers,
+    remix: self._components.cmdInterpreter,
+    web3: new Web3(executionContext.web3().currentProvider),
     console: {
       log: function () { scopedCommands.log.apply(scopedCommands, arguments) },
       info: function () { scopedCommands.info.apply(scopedCommands, arguments) },
+      warn: function () { scopedCommands.warn.apply(scopedCommands, arguments) },
       error: function () { scopedCommands.error.apply(scopedCommands, arguments) }
     },
     setTimeout: (fn, time) => {

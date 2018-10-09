@@ -1,10 +1,9 @@
 'use strict'
 var DropdownPanel = require('./DropdownPanel')
-var remixSolidity = require('remix-solidity')
-var localDecoder = remixSolidity.localDecoder
+var remixDebug = require('remix-debug')
+var localDecoder = remixDebug.SolidityDecoder.localDecoder
 var solidityTypeFormatter = require('./SolidityTypeFormatter')
-var remixCore = require('remix-core')
-var StorageViewer = remixCore.storage.StorageViewer
+var StorageViewer = remixDebug.storage.StorageViewer
 var yo = require('yo-yo')
 
 class SolidityLocals {
@@ -49,6 +48,7 @@ class SolidityLocals {
 }
 
 function decode (self, sourceLocation) {
+  self.basicPanel.setMessage('')
   self.traceManager.waterfall([
     self.traceManager.getStackAt,
     self.traceManager.getMemoryAt,
@@ -67,6 +67,9 @@ function decode (self, sourceLocation) {
           localDecoder.solidityLocals(self.parent.currentStepIndex, self.internalTreeCall, stack, memory, storageViewer, sourceLocation).then((locals) => {
             if (!locals.error) {
               self.basicPanel.update(locals)
+            }
+            if (!Object.keys(locals).length) {
+              self.basicPanel.setMessage('no locals')
             }
           })
         } catch (e) {

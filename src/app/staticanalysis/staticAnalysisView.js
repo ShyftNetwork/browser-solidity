@@ -1,5 +1,5 @@
 'use strict'
-var StaticAnalysisRunner = require('@shyftnetwork/shyft_remix-solidity').CodeAnalysis
+var StaticAnalysisRunner = require('@shyftnetwork/shyft_remix-analyzer').CodeAnalysis
 var yo = require('yo-yo')
 var $ = require('jquery')
 var remixLib = require('@shyftnetwork/shyft_remix-lib')

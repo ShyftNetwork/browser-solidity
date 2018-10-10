@@ -1,7 +1,7 @@
 'use strict'
 
 var fs = require('fs')
-var compiler = require('solc')
+var compiler = require('@shyftnetwork/shyft_solc')
 
 var compilerInput = require('@shyftnetwork/shyft_remix-solidity').CompilerInput
 var compilationResult = {}

@@ -59,7 +59,7 @@ module.exports = class CompileTab {
       timeout: 300,
       allversions: null,
       selectedVersion: null,
-      baseurl: 'https://solc-bin.ethereum.org/bin'
+      baseurl: ' https://shyftnetwork.github.io/shyft_solc-bin/bin'
     }
     self.data.optimize = !!self._components.queryParams.get().optimize
     self._components.queryParams.update({ optimize: self.data.optimize })
